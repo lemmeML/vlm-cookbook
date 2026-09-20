@@ -121,10 +121,19 @@ Pick $c$ to be the largest score in the vector, $c = \max_j z_j$. Now the larges
 ```python
 import numpy as np
 
+def naive_softmax(x):
+    e = np.exp(x)
+    return e / e.sum()
+    
 def stable_softmax(x):
-    z = x - x.max()          # the largest score becomes 0
-    e = np.exp(z)            # every value is now at most 1
-    return e / e.sum()
+    z = x - x.max()          # the largest score becomes 0
+    e = np.exp(z)            # every value is now at most 1
+    return e / e.sum()
+
+x = np.array([1000.0, 999.0, 998.0])
+with np.errstate(over="ignore", invalid="ignore"):
+    print("naive  ", naive_softmax(x))
+print("stable ", stable_softmax(x))
 ```
 
 output: <br>
