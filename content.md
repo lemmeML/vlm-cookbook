@@ -28,7 +28,7 @@ Don't try to memorize anything here. Memorized code is forgotten by next week. U
 
 ---
 
-## Chapter 1 Contrastive learning
+# Chapter 1. Contrastive learning
 
 **Main Idea: A matching image and caption should give a big dot product and every mismatched pair should give a small one.**
 
@@ -44,12 +44,12 @@ The dot product also equals $|\mathbf{a}|.|\mathbf{b}|\cos\theta$, where $\theta
 
 If both vectors point the same way, the dot product is $1$, If they point in orthogonal directions it is close to $0$ and if they point in opposite directions it is $-1$.
 
-(*CLIP always normalizes its vectors this way, don't worry we will learn more about CLIP ahead in the chapter*).
+(*CLIP always normalizes its vectors this way, don't worry we will learn more about CLIP ahead in the chapter).
 
 
 ### A Pile of Pictures
 
-![img-1.jpg](fig/img-1.jpg)
+![img-1](fig/img-1.jpg)
 
 Imagine you have a huge pile of pictures, and each picture comes with a short description. A photo of a dog with the caption "a brown dog on the grass". A photo of a pizza with "a pepperoni pizza".
 
@@ -103,7 +103,7 @@ loss_t = cross_entropy_loss(logits, labels, axis=1)
 loss = (loss_i + loss_t) / 2
 ```
 
-![img-3](fig/img-3.jpg)
+![mg-3](fig/img-3.jpg)
 
 
 ### Why softmax is dangerous and how to fix it
@@ -121,19 +121,10 @@ Pick $c$ to be the largest score in the vector, $c = \max_j z_j$. Now the larges
 ```python
 import numpy as np
 
-def naive_softmax(x):
-    e = np.exp(x)
-    return e / e.sum()
-
 def stable_softmax(x):
-    z = x - x.max()          # the largest score becomes 0
-    e = np.exp(z)            # every value is now at most 1
-    return e / e.sum()
-
-x = np.array([1000.0, 999.0, 998.0])
-with np.errstate(over="ignore", invalid="ignore"):
-    print("naive  ", naive_softmax(x))
-print("stable ", stable_softmax(x))
+    z = x - x.max()          # the largest score becomes 0
+    e = np.exp(z)            # every value is now at most 1
+    return e / e.sum()
 ```
 
 output: <br>
@@ -154,7 +145,7 @@ A later approach changed one thing. Instead of treating each row as a competitio
 That is a binary classification task, and the tool for it is the sigmoid function. Sigmoid takes any number and squashes it into a value between 0 and 1.
 
 
-![[sigmoid](fig/sigmoid.svg)
+![sigmoid](fig/sigmoid.svg)
 $$\sigma(x) = \frac{1}{1 + e^{-x}}$$
 
 A big positive $s$ gives something close to 1, a big negative $x$ gives something close to 0, and $x = 0$ gives exactly $0.5$.
