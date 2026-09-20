@@ -136,9 +136,9 @@ with np.errstate(over="ignore", invalid="ignore"):
 print("stable ", stable_softmax(x))
 ```
 
-output:
-naive   [nan nan nan]
-stable  [0.66524096 0.24472847 0.09003057]
+output: <br>
+naive   [nan nan nan] <br>
+stable  [0.66524096 0.24472847 0.09003057] <br>
 
 
 ### The problem with CLIP at scale
@@ -198,9 +198,9 @@ print("loss with random captions:", sigmoid_loss(img, txt_random, t, b).item())
 print("loss with matching captions:", sigmoid_loss(img, txt_matching, t, b).item())
 ```
 
-output:
-positives 4 | negatives 12
-loss with random captions:   0.6071510910987854
+output: <br>
+positives 4 | negatives 12 <br>
+loss with random captions:   0.6071510910987854 <br>
 loss with matching captions: 0.2847801446914673
 
 
