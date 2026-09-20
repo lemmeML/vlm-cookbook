@@ -93,10 +93,10 @@ $$\mathcal{L} = \frac{1}{2}\left(\mathcal{L}_{\text{img}} + \mathcal{L}_{\text{t
 
 Before the loss, every cell of the table is multiplied by $e^{t}$, where $t$ is a learned number called the **temperature**. So the model actually works with $S_{ij} \cdot e^{t}$. Since cosine similarities only live between $[-1,1]$ this lets the model stretch them and control how sharp the softmax gets.
 
-Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 
 ![mg-3](fig/img-3.jpg)
 
+Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 ```python
 logits = np.dot(I_e, T_e.T) * np.exp(t)     # the N x N table, stretched by the temperature
 labels = np.arange(n)                       # row i should pick column i
