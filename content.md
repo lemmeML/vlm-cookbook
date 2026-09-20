@@ -49,7 +49,7 @@ If both vectors point the same way, the dot product is $1$, If they point in ort
 
 ### A Pile of Pictures
 
-![img-1](fig/img-1.jpg)
+![pile](fig/ch1-pile.svg)
 
 Imagine you have a huge pile of pictures, and each picture comes with a short description. A photo of a dog with the caption "a brown dog on the grass". A photo of a pizza with "a pepperoni pizza".
 
@@ -61,7 +61,7 @@ Row $i$ is image $i$, column $j$ is caption $j$, and the cell at row $i$ column 
 
 Picture $i$ goes with caption $i$. So the correct pairs are the cells where the row number equals the column number, $S_{ii}$. That is the diagonal of the table. Every cell off the diagonal, $S_{ij}$ with $i \neq j$, is a wrong pair. There are $N$ right pairs and $(N^2 - N)$ wrong ones.
 
-![img-2](fig/img-2.png)
+![contrastive-table](fig/ch1-contrastive-table.svg)
 
 **Contrastive learning means training both encoders so that the diagonal cells become large and every other cell becomes small. The model learns by contrasting the right pair against all the wrong ones.**
 
@@ -94,7 +94,7 @@ $$\mathcal{L} = \frac{1}{2}\left(\mathcal{L}_{\text{img}} + \mathcal{L}_{\text{t
 Before the loss, every cell of the table is multiplied by $e^{t}$, where $t$ is a learned number called the **temperature**. So the model actually works with $S_{ij} \cdot e^{t}$. Since cosine similarities only live between $[-1,1]$ this lets the model stretch them and control how sharp the softmax gets.
 
 
-![mg-3](fig/img-3.jpg)
+![clip loss](fig/ch1-clip-loss.svg)
 
 Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 ```python
@@ -154,7 +154,7 @@ A later approach changed one thing. Instead of treating each row as a competitio
 That is a binary classification task, and the tool for it is the sigmoid function. Sigmoid takes any number and squashes it into a value between 0 and 1.
 
 
-![sigmoid](fig/sigmoid.svg)
+![sigmoid](fig/ch1-sigmoid.svg)
 
 $$\sigma(x) = \frac{1}{1 + e^{-x}}$$
 
@@ -207,7 +207,7 @@ loss with matching captions: 0.2847801446914673
 
 The big win is independence. No cell needs to know about any other cell. Look at $\mathcal{L}_{ij}$ again, it only uses $S_{ij}$. There is no row maximum and no row sum. So you can cut the table into blocks, send each block to a different device and compute them separately. This is why the sigmoid loss scales to batches of a million pairs.
 
-![img-4](fig/img-4.jpg)
+![sigmoid loss blocks](fig/ch1-sigmoid-loss-blocks.svg)
 
 ### Why use a contrastive encoder in a VLM
 
