@@ -95,6 +95,8 @@ Before the loss, every cell of the table is multiplied by $e^{t}$, where $t$ is 
 
 Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 
+![mg-3](fig/img-3.jpg)
+
 ```python
 logits = np.dot(I_e, T_e.T) * np.exp(t)     # the N x N table, stretched by the temperature
 labels = np.arange(n)                       # row i should pick column i
@@ -102,8 +104,6 @@ loss_i = cross_entropy_loss(logits, labels, axis=0)
 loss_t = cross_entropy_loss(logits, labels, axis=1)
 loss = (loss_i + loss_t) / 2
 ```
-
-![mg-3](fig/img-3.jpg)
 
 
 ### Why softmax is dangerous and how to fix it
