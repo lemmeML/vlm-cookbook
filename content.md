@@ -155,6 +155,7 @@ That is a binary classification task, and the tool for it is the sigmoid functio
 
 
 ![sigmoid](fig/sigmoid.svg)
+
 $$\sigma(x) = \frac{1}{1 + e^{-x}}$$
 
 A big positive $s$ gives something close to 1, a big negative $x$ gives something close to 0, and $x = 0$ gives exactly $0.5$.
