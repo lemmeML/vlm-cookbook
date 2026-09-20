@@ -112,7 +112,7 @@ The exponential grows very fast. $e^{100}$ is 2688117141816135448412625551580013
 
 The fix is a small trick. Softmax is a fraction. If you multiply the top and the bottom of a fraction by the same number, the fraction does not change. So multiply both by $e^{-c}$ for some constant $c$. Because $e^{z_k} \cdot e^{-c} = e^{z_k - c}$, this is the same as subtracting $c$ from every score before the exponential
 
-$$\frac{e^{z_k}}{\sum_j e^{z_j}} = \frac{e^{-c}, e^{z_k}}{e^{-c}\sum_j e^{z_j}} = \frac{e^{z_k - c}}{\sum_j e^{z_j - c}}$$
+$$\frac{e^{z_k}}{\sum_j e^{z_j}} = \frac{e^{-c} e^{z_k}}{e^{-c}\sum_j e^{z_j}} = \frac{e^{z_k - c}}{\sum_j e^{z_j - c}}$$
 
 The factor cancels and the output is identical.
 
