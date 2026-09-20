@@ -28,7 +28,7 @@ Don't try to memorize anything here. Memorized code is forgotten by next week. U
 
 ---
 
-# Chapter 1. Contrastive learning
+## Chapter 1 Contrastive learning
 
 **Main Idea: A matching image and caption should give a big dot product and every mismatched pair should give a small one.**
 
@@ -49,7 +49,7 @@ If both vectors point the same way, the dot product is $1$, If they point in ort
 
 ### A Pile of Pictures
 
-![img-1](fig/img-1.jpg)
+![img-1.jpg](fig/img-1.jpg)
 
 Imagine you have a huge pile of pictures, and each picture comes with a short description. A photo of a dog with the caption "a brown dog on the grass". A photo of a pizza with "a pepperoni pizza".
 
@@ -103,7 +103,7 @@ loss_t = cross_entropy_loss(logits, labels, axis=1)
 loss = (loss_i + loss_t) / 2
 ```
 
-![mg-3](fig/img-3.jpg)
+![img-3](fig/img-3.jpg)
 
 
 ### Why softmax is dangerous and how to fix it
@@ -121,15 +121,25 @@ Pick $c$ to be the largest score in the vector, $c = \max_j z_j$. Now the larges
 ```python
 import numpy as np
 
+def naive_softmax(x):
+    e = np.exp(x)
+    return e / e.sum()
+
 def stable_softmax(x):
-    z = x - x.max()          # the largest score becomes 0
-    e = np.exp(z)            # every value is now at most 1
-    return e / e.sum()
+    z = x - x.max()          # the largest score becomes 0
+    e = np.exp(z)            # every value is now at most 1
+    return e / e.sum()
+
+x = np.array([1000.0, 999.0, 998.0])
+with np.errstate(over="ignore", invalid="ignore"):
+    print("naive  ", naive_softmax(x))
+print("stable ", stable_softmax(x))
 ```
 
-**output:** <br>
-naive   [nan nan nan] <br>
-stable  [0.66524096 0.24472847 0.09003057] <br>
+
+**output:**
+naive   [nan nan nan]
+stable  [0.66524096 0.24472847 0.09003057]
 
 
 ### The problem with CLIP at scale
@@ -145,7 +155,7 @@ A later approach changed one thing. Instead of treating each row as a competitio
 That is a binary classification task, and the tool for it is the sigmoid function. Sigmoid takes any number and squashes it into a value between 0 and 1.
 
 
-![sigmoid](fig/sigmoid.svg)
+![[sigmoid](fig/sigmoid.svg)
 $$\sigma(x) = \frac{1}{1 + e^{-x}}$$
 
 A big positive $s$ gives something close to 1, a big negative $x$ gives something close to 0, and $x = 0$ gives exactly $0.5$.
@@ -189,9 +199,9 @@ print("loss with random captions:", sigmoid_loss(img, txt_random, t, b).item())
 print("loss with matching captions:", sigmoid_loss(img, txt_matching, t, b).item())
 ```
 
-**output:** <br>
-positives 4 | negatives 12 <br>
-loss with random captions:   0.6071510910987854 <br>
+**output:**
+positives 4 | negatives 12
+loss with random captions:   0.6071510910987854
 loss with matching captions: 0.2847801446914673
 
 
