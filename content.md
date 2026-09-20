@@ -44,7 +44,7 @@ The dot product also equals $|\mathbf{a}|.|\mathbf{b}|\cos\theta$, where $\theta
 
 If both vectors point the same way, the dot product is $1$, If they point in orthogonal directions it is close to $0$ and if they point in opposite directions it is $-1$.
 
-(*CLIP always normalizes its vectors this way, don't worry we will learn more about CLIP ahead in the chapter).
+(*CLIP always normalizes its vectors this way, don't worry we will learn more about CLIP ahead in the chapter*).
 
 
 ### A Pile of Pictures
