@@ -209,8 +209,6 @@ The big win is independence. No cell needs to know about any other cell. Look at
 
 ![sigmoid loss blocks](fig/ch1-sigmoid-loss-blocks.svg)
 
-### Why use a contrastive encoder in a VLM
-
 Our vision language model only keeps the image encoder from this training, not the text one. Why pick an encoder trained this way rather than a plain image classifier?
 
 Because its image vectors were trained to line up with language. They already carry the kind of meaning text cares about. Also this training data is cheap. The internet is full of images with descriptions, like Wikipedia captions or the alt text of HTML images, which is the text shown when an image fails to load. Some descriptions are wrong or noisy, but with billions of examples the model still learns good representations.
