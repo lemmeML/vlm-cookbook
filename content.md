@@ -28,7 +28,7 @@ Don't try to memorize anything here. Memorized code is forgotten by next week. U
 
 ---
 
-# Chapter 1. Contrastive learning
+# Chapter 1. Turning Data into Numbers
 
 **Main Idea: A matching image and caption should give a big dot product and every mismatched pair should give a small one.**
 
@@ -70,7 +70,7 @@ Picture $i$ goes with caption $i$. So the correct pairs are the cells where the 
 
 [CLIP](https://openai.com/index/clip/) was the first well known model trained this way, from OpenAI. To see its loss you first need to know how language models are trained, because CLIP borrows the same trick.
 
-A language model reads "I love pepperoni" and has to guess the next word. It outputs one score for every word in its vocabulary. These raw scores are called logits, and we write them as $z_1, z_2, \dots, z_V$ where $V$ is the size of the vocabulary. We want the score for "pizza" to be the highest.
+A language model reads "I love" and has to guess the next word. It outputs one score for every word in its vocabulary. These raw scores are called logits, and we write them as $z_1, z_2, \dots, z_V$ where $V$ is the size of the vocabulary. We want the score for "you" to be the highest.
 
 To compare scores with a correct answer, we first turn the scores into a probability distribution with a function called softmax. For each score it computes the exponential and then divides by the sum of the exponentials of all scores
 
