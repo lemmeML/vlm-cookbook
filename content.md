@@ -51,7 +51,7 @@ If both vectors point the same way, the dot product is $1$, If they point in ort
 
 ![pile](fig/ch1-pile.svg)
 
-Imagine you have a huge pile of pictures, and each picture comes with a short description. A photo of a dog with the caption "a brown dog on the grass". A photo of a pizza with "a pepperoni pizza".
+Imagine you have a huge pile of pictures, and each picture comes with a short description. A photo of a dog with the caption "a brown dog on the grass".
 
 You build two encoders. An image encoder turns a picture into a vector. A text encoder turns a caption into a vector. Each encoder ends with a linear projection into a shared space of the same dimension $d$, so both vectors have the same number of entries and you can take their dot product. Both are then normalized to length 1.
 
