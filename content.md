@@ -8,7 +8,7 @@ Somewhere between the light hitting her eyes and the word leaving her mouth, a g
 
 For a long time computers could not really _see_, we had to tell them in-code exactly what to look for: edges, shapes, colors, patterns, etc. With neural networks the interactions changed, we could show a model millions of examples and let it learn the patterns for itself. Computer Vision went from recognizing simple shapes to recognizing objects, faces and eventually the whole scene.
 
-Language followed a similar path as models went from predicting the next word to understanding increasingly complex relationships between words, sentences and ideas. Things got interesting when we merged the capabilities of two different kinds of models interact and work together.
+Language followed a similar path as models went from predicting the next word to understanding increasingly complex relationships between words, sentences and ideas. Things got interesting when we merged the capabilities of two different kinds of models, let them interact and work together.
 
 Today, we have SOTA models that can look at an image, read a question about it, answer in language, and then generates new visuals from a prompt, with great detail and accuracy. We call them **Vision Language Models**.
 
