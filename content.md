@@ -438,17 +438,17 @@ So `nn.Conv2d(in_channels=3, out_channels=768, kernel_size=16, stride=16, paddin
 
 That description is a lot of words for a simple operation. Let's do one small enough to compute in your head. A grayscale image, so 1 channel, of $4 \times 4$ pixels, a $2 \times 2$ kernel, stride 2 and no bias.
 
-$$\text{image} = \begin{pmatrix} 1 & 2 & 0 & 1 \\ 3 & 4 & 1 & 0 \\ 2 & 1 & 2 & 2 \\ 1 & 0 & 3 & 3 \end{pmatrix} \qquad \text{kernel} = \begin{pmatrix} 1 & 0 \\ -1 & 2 \end{pmatrix}$$
+$$\text{image} = \begin{pmatrix} 3 & 5 & 1 & 9 \\ 2 & 7 & 4 & 6 \\ 8 & 0 & 5 & 3 \\ 1 & 6 & 2 & 4 \end{pmatrix} \qquad \text{kernel} = \begin{pmatrix} 1 & 0 \\ 0 & -1 \end{pmatrix}$$
 
-The window starts at the top left and sees the patch $\begin{pmatrix} 1 & 2 \\ 3 & 4 \end{pmatrix}$. Multiply each pixel by the kernel weight in the same spot and add everything up
+The window starts at the top left and sees the patch $\begin{pmatrix} 3 & 5 \\ 2 & 7 \end{pmatrix}$. Multiply each pixel by the kernel weight in the same spot and add everything up
 
-$$1 \cdot 1 + 2 \cdot 0 + 3 \cdot (-1) + 4 \cdot 2 = 1 + 0 - 3 + 8 = 6$$
+$$3 \cdot 1 + 5 \cdot 0 + 2 \cdot 0 + 7 \cdot (-1) = 3 - 7 = -4$$
 
-Jump 2 pixels right. The window sees $\begin{pmatrix} 0 & 1 \\ 1 & 0 \end{pmatrix}$ and gives $0 + 0 - 1 + 0 = -1$. Jump down to the bottom left, $\begin{pmatrix} 2 & 1 \\ 1 & 0 \end{pmatrix}$ gives $2 + 0 - 1 + 0 = 1$. Bottom right, $\begin{pmatrix} 2 & 2 \\ 3 & 3 \end{pmatrix}$ gives $2 + 0 - 3 + 6 = 5$.
+Jump 2 pixels right. The window sees $\begin{pmatrix} 1 & 9 \\ 4 & 6 \end{pmatrix}$ and gives $1 - 6 = -5$. Jump down to the bottom left, $\begin{pmatrix} 8 & 0 \\ 1 & 6 \end{pmatrix}$ gives $8 - 6 = 2$. Bottom right, $\begin{pmatrix} 5 & 3 \\ 2 & 4 \end{pmatrix}$ gives $5 -4 = 1$.
 
 Four patches, four numbers, and they land in a $2 \times 2$ grid in the same arrangement as the patches they came from
 
-$$\text{output} = \begin{pmatrix} 6 & -1 \\ 1 & 5 \end{pmatrix}$$
+$$\text{output} = \begin{pmatrix} -4 & -5 \\ 2 & 1 \end{pmatrix}$$
 
 ![convolution by hand](fig/ch2-conv-by-hand.svg)
 
