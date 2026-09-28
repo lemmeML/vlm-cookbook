@@ -299,8 +299,11 @@ The paper's second message is just as important: once the image is a sequence of
 
 Before we build the first piece, here is the whole machine, so you always know where the piece you are building fits.
 
+<br>
 
 ![vision transformer](ch2-vision-transformer.svg)
+
+<br>
 
 A $224 \times 224$ photo comes in. It is cut into a grid of $16 \times 16$ pixel patches, 14 across and 14 down, so 196 patches. One layer then looks at each patch and turns its pixels into a list of 768 numbers. Now we have 196 vectors, one per patch, and each one describes what its patch _looks like_. But cutting the image into a list lost track of where each patch was, so we add a second vector to each one that says which slot it came from.
 
