@@ -482,9 +482,9 @@ This toy has one output channel, so each patch became one number. Our real layer
 
 ### A convolution is a linear layer in disguise
 
-Look at the first patch again. Read its pixels row by row into a list, $[1, 2, 3, 4]$, and do the same with the kernel, $[1, 0, -1, 2]$. The dot product of the two lists is
+Look at the first patch again. Read its pixels row by row into a list, $[3, 5, 2, 7]$, and do the same with the kernel, $[1, 0, 0, -1]$. The dot product of the two lists is
 
-$$1 \cdot 1 + 2 \cdot 0 + 3 \cdot (-1) + 4 \cdot 2 = 6$$
+$$3 \cdot 1 + 5 \cdot 0 + 2 \cdot 0 + 7 \cdot (-1) = -4$$
 
 the same number the convolution produced. That is not a coincidence. When the stride equals the kernel, every window sees its own patch and nothing else, so the convolution is exactly this: flatten each patch into a list, and multiply it by a weight matrix, the same matrix for every patch, then add the bias. With 768 kernels, the weight matrix has one row per kernel. In other words, a linear layer applied to every flattened patch.
 
