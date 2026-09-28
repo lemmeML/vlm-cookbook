@@ -460,22 +460,22 @@ PyTorch agrees.
 import torch
 import torch.nn as nn
 
-img = torch.tensor([[1., 2., 0., 1.],
-                    [3., 4., 1., 0.],
-                    [2., 1., 2., 2.],
-                    [1., 0., 3., 3.]]).reshape(1, 1, 4, 4)       # [B, C, H, W]
+img = torch.tensor([[3., 5., 1., 9.],
+                    [2., 7., 4., 6.],
+                    [8., 0., 5., 3.],
+                    [1., 6., 2., 4.]]).reshape(1, 1, 4, 4)       # [B, C, H, W]
 
 conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=2, stride=2, bias=False)
 conv.weight.data = torch.tensor([[1., 0.],
-                                 [-1., 2.]]).reshape(1, 1, 2, 2)  # [out_channels, in_channels, K, K]
+                                 [0., -1.]]).reshape(1, 1, 2, 2)  # [out_channels, in_channels, K, K]
 print(conv(img).detach())
 ```
 
 output:
 
 ```text
-tensor([[[[ 6., -1.],
-          [ 1.,  5.]]]])
+tensor([[[[ -4., -5.],
+          [  2.,  1.]]]])
 ```
 
 This toy has one output channel, so each patch became one number. Our real layer has 768 output channels, 768 different kernels, so each patch becomes 768 numbers, one from each kernel. That is the patch vector.
