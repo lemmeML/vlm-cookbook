@@ -868,6 +868,8 @@ plt.show()
 ![patch+pos](fig/patch+pos.png)
 ![similar](fig/similar.png)
 
+The patch embedding alone knows what is in a patch but not where, so similar-looking patches match anywhere in the image. The position embedding alone knows where but not what, so it matches nearby slots regardless of content. Adding them gives each of the 196 tokens both, and that [196, 768] matrix is the input to the transformer layers.
+
 ### Where these vectors are going
 
 In the first chapter we said a picture goes into the image encoder and a vector comes out. That was true when the Image Encoder was being trained for image-text alignment. To compare an image with a caption you need one vector per image, so during that training all the patch vectors are squeezed into a single vector by a small pooling layer at the end.
