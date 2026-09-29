@@ -521,7 +521,7 @@ True
 (`flatten(2).transpose(1, 2)` on the first line turns the conv's grid into a list of 196 vectors so the two results can be compared. We explain it properly later in the chapter.)
 
 ![convolution is linear](fig/ch2-conv-is-linear.svg)
-The code below splits our dog image into 196 patches from earlier and shows them as sequence and the final matrix form.
+The code below splits our dog image into 196 patches from earlier and shows them as sequence and the matrix form.
 
 ```python
 import numpy as np
@@ -868,7 +868,7 @@ plt.show()
 ![patch+pos](fig/patch+pos.png)
 ![similar](fig/similar.png)
 
-The patch embedding alone knows what is in a patch but not where, so similar-looking patches match anywhere in the image. The position embedding alone knows where but not what, so it matches nearby slots regardless of content. Adding them gives each of the 196 tokens both, and that [196, 768] matrix is the input to the transformer layers.
+The patch embedding alone knows what is in a patch but not where, so similar-looking patches match anywhere in the image. The position embedding alone knows where but not what, so it matches nearby slots regardless of content. Adding them gives each of the 196 tokens both, and that $[196, 768]$ matrix is the input to the transformer layers.
 
 ### Where these vectors are going
 
