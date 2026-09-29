@@ -1,32 +1,32 @@
 ## Before We Begin
 
-Show a 5 year-old a photograph of a dog and ask what color it is. She will look at it and say "brown" without thinking twice.
+Show a 5 year old a photograph of a dog and ask what color it is. She will look at it and say "brown" without thinking twice.
 
 Now try to explain how she did it.
 
 Somewhere between the light hitting her eyes and the word leaving her mouth, a grid of colored dots became _a dog_. Then a string of sounds became _a question about the dog_. Then the two met, and out came an answer. She has no idea how any of this happened. For most of the history of computing, neither did we.
 
-For a long time computers could not really _see_, we had to tell them in-code exactly what to look for: edges, shapes, colors, patterns, etc. With neural networks the interactions changed, we could show a model millions of examples and let it learn the patterns for itself. Computer Vision went from recognizing simple shapes to recognizing objects, faces and eventually the whole scene.
+For a long time computers could not really _see_. We had to spell out exactly what to look for: edges, corners, colors, textures. Neural networks changed that. Instead of writing the rules, we could show a model millions of examples and let it learn the patterns for itself. Computer vision went from recognizing simple shapes to recognizing objects, faces and, eventually, entire scenes.
 
-Language followed a similar path as models went from predicting the next word to understanding increasingly complex relationships between words, sentences and ideas. Things got interesting when we merged the capabilities of two different kinds of models, let them interact and work together.
+Language followed a similar path, as models went from predicting the next word to understanding increasingly complex relationships between words, sentences and ideas. Things got interesting when we joined the two kinds of models together and let them work as one.
 
-Today, we have SOTA models that can look at an image, read a question about it, answer in language, and then generates new visuals from a prompt, with great detail and accuracy. We call them **Vision Language Models**.
+Today models can look at an image, read a question about it and answer in plain language, with remarkable detail and accuracy. We call them **Vision Language Models**, or VLMs.
 
-So how does a model built around language suddenly gets to see? Under the hood, a VLM has multiple components stitched together: something that sees, something that reasons (in language) and a bridge that lets these two parts talk to each other.
+So how does a model built around language suddenly get to see? Under the hood, a VLM is several components stitched together: something that sees, something that reasons in language, and a bridge that lets the two talk to each other.
 
-A computer doesn't see a dog. It sees a few hundred thousand numbers arranged in a grid, and nothing in those numbers says "dog", that's where a **Vision Encoder** comes in the picture. Its job is to cut the image into small square patches, the way you might cut a photograph into tiles. On their own the tiles mean little. A patch of brown fur could belong to a dog, a bear, or a carpet. Meaning only emerges when the patches can _talk to each other_, when the patch with the ear can ask the patch with the snout what it's looking at. The mechanism that makes this conversation possible is called **Attention**. It is the single most important idea in modern AI, which you are going to implement on your own in the chapters ahead. Stack enough layers of attention together and you get an **Encoder**, a machine that turns pixels into understanding.
+A computer doesn't see a dog. It sees a few hundred thousand numbers arranged in a grid, and nothing in those numbers says "dog". That is where a **Vision Encoder** comes in. Its job is to cut the image into small square patches, the way you might cut a photograph into tiles. On their own the tiles mean little. A patch of brown fur could belong to a dog, a bear, or a carpet. Meaning only emerges when the patches can _talk to each other_, when the patch with the ear can ask the patch with the snout what it's looking at. The mechanism that makes this conversation possible is called **Attention**. It is the single most important idea in modern AI, and you will implement it yourself in the chapters ahead. Stack enough layers of attention together and you get an **Encoder**, a machine that turns pixels into understanding.
 
-But seeing is only half the part, the model also has to "_read_", and it has to hold the image and the words in its head at the same time. Here we run into a puzzle, Images and words are completely different kinds of things. How do you put a picture _inside_ a sentence? The answer is, A **Processor**, a processor prepares the image and the prompt, leaving room in the text for the picture to sit. A small bridge translates what the vision encoder saw into the same language the words are written in. Once that is done, a picture is no longer a foreign object. It becomes just another part of the sentence.
+But seeing is only half the job. The model also has to "_read_", and it has to hold the image and the words in its head at the same time. Here we run into a puzzle: images and words are completely different kinds of things. How do you put a picture _inside_ a sentence? The answer comes in two parts. First, a **Processor** prepares the image and the prompt, leaving room in the text for the picture to sit. Then a small bridge translates what the vision encoder saw into the same language the words are written in. Once that is done, a picture is no longer a foreign object. It becomes just another part of the sentence.
 
-Finally, the model has to "_speak_". For this we need a **Language model**, a **Decoder** that reads the combined sequence of image and words and writes its answer one word at a time. Each word it chooses is informed by everything that came before, including what it saw. We load some weights into our Vision model, write the **inference** loop, show it a picture, and ask it a question, and it answers!
+Finally, the model has to "_speak_". For this we need a **Language Model**, a **Decoder** that reads the combined sequence of image and words and writes its answer one word at a time. Each word it chooses is informed by everything that came before, including what it saw. Then we load pretrained weights into the model we built, write the **inference** loop, show it a picture and ask it a question. And it answers!
 
-#### Isn't that cool. By tinkering and arranging few lines of code in a particular order you give it the ability to See! Just like a 5 year-old who does it naturally.
+#### Isn't that cool? A few lines of code, arranged in the right order, give a machine the ability to see, something a 5 year old does naturally.
 
 ---
 
 You don't need to be an expert to make this journey. If you know that a neural network is built from layers, that a linear layer multiplies its input by a matrix and adds a bias, and that we train models by measuring a loss and nudging the weights through backpropagation, you have everything you need. Everything else is explained as we go.
 
-Read a chapter, then close the book and open the code editor. Try to write the code _before_ you feel ready. When you get stuck, and you will, come back and reread. That moment of being stuck is not a sign that something is wrong. It is the exact moment the idea is being carved into your mind.
+Read a chapter, then close the book and open the code editor. Try to write the code _before_ you feel ready. When you get stuck, and you will, come back and reread. That moment of being stuck is not a sign that something is wrong. It happens when the idea is being carved into your mind.
 
 Don't try to memorize anything here. Memorized code is forgotten by next week. Understood code is yours forever. If you understand _why_ each piece exists and what problem would appear if you took it away, you will find something strange happens: the code starts to write itself.
 
@@ -36,29 +36,31 @@ So let's start our journey with the most basic question: **how does a machine un
 
 # Chapter 1. Turning Data into Numbers
 
-A machine doesn't see or read like humans, it only deals in numbers. So to make them understand anything we turn those things into numbers that can be compared and learned from. Once a picture and a sentence are represented as numbers we can ask a simple question: **how close should their representations be if they mean the same thing?**
+A machine doesn't see or read the way we do. It only deals in numbers. So before it can understand anything, we have to turn that thing into numbers that can be compared and learned from. Once a picture and a sentence are both represented as numbers, we can ask a simple question: **how close should their representations be if they mean the same thing?**
 
 > **Main Idea: A matching image and caption should give a big dot product and every mismatched pair should give a small one.**
 
-We eventually want a vision encoder that produces representations a language model can use, but before we can connect vision and language, the image encoder first has to learn which visual concepts correspond to which word. A photo of a dog and the words "a brown dog" should mean the same thing. This meaning has to be conveyed numerically since a neural network only understands numbers too; so we need a way to turn a picture or a sentence into numbers we can compare.
+Eventually we want a vision encoder whose output a language model can use. But before we can connect vision and language, the image encoder has to learn which visual concepts go with which words. A photo of a dog and the words "a brown dog" should mean the same thing, and since a neural network only understands numbers, that shared meaning has to show up in the numbers. So we need a way to turn a picture or a sentence into numbers we can compare.
 
-### Embedding Vectors
+### Embedding vectors
 
-An embedding is a list of number which stands for something (a word, sentence, image or something else), It is also popularly known as **Vector**. If two things mean similar things, we want their vectors to point in similar directions.
+An embedding is a list of numbers that stands for something: a word, a sentence, an image or anything else. A list of numbers like this is called a **vector**, so embeddings are often called embedding vectors. If two things mean similar things, we want their vectors to point in similar directions.
 
 The standard way to measure how similar two vectors are is the dot product. You multiply the numbers position by position and add them up:
 
-$$\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i b_i$$ ($a_i$ and $b_i$ are $i$-th numbers in $\mathbf{a}$ and $\mathbf{b}$ and $n$ is how many numbers each vector holds).
+$$\mathbf{a} \cdot \mathbf{b} = \sum_{i=1}^{n} a_i b_i$$
 
-The dot product also equals $|\mathbf{a}|.|\mathbf{b}|\cos\theta$, where $\theta$ is the angle between the vectors. It tells two tales: how long the vectors are and which way they point. To measure direction only, we first normalize each vector to length 1, so that $|\mathbf{a}| = |\mathbf{b}| = 1$ and the dot product becomes exactly $\cos\theta$ _(the cosine similarity)_.
+where $a_i$ and $b_i$ are the $i$-th numbers of $\mathbf{a}$ and $\mathbf{b}$, and $n$ is how many numbers each vector holds.
 
-If both vectors point the same way, the dot product is $1$, If they point in orthogonal directions it is close to $0$ and if they point in opposite directions it is $-1$.
+The dot product also equals $|\mathbf{a}|,|\mathbf{b}|\cos\theta$, where $\theta$ is the angle between the vectors. It tells two tales: how long the vectors are and which way they point. To measure direction only, we first normalize each vector to length 1, so that $|\mathbf{a}| = |\mathbf{b}| = 1$ and the dot product becomes exactly $\cos\theta$ _(the cosine similarity)_.
 
-_(CLIP always normalizes its vectors this way, don't worry we will learn more about CLIP ahead in the chapter)._
+If both vectors point the same way, the dot product is $1$. If they are perpendicular (orthogonal) it is $0$, and if they point in opposite directions it is $-1$.
 
-Now all we need is data, so an image vector and a caption vector lands close together when they describe the same thing, and far apart when they don't. Our training data should tell us which images and which words belong together.
+_(CLIP, which we meet later in this chapter, always normalizes its vectors this way.)_
 
-### A Pile of Pictures
+Now we need data that teaches the encoders to place an image vector and a caption vector close together when they describe the same thing, and far apart when they don't. That data has to tell us which images and which words belong together.
+
+### A pile of pictures
 
 ![pile](fig/ch1-pile.svg)
 
@@ -72,47 +74,53 @@ Row $i$ is image $i$, column $j$ is caption $j$, and the cell at row $i$ column 
 
 Picture $i$ goes with caption $i$. So the correct pairs are the cells where the row number equals the column number, $S_{ii}$. That is the diagonal of the table. Every cell off the diagonal, $S_{ij}$ with $i \neq j$, is a wrong pair. There are $N$ right pairs and $(N^2 - N)$ wrong ones.
 
-![contrastive-table](fig/ch1-contrastive-table.svg)
+![contrastive-table](ch1-contrastive-table.svg)
 
-**This is also known as Contrastive Learning. Training both encoders so the diagonal cells become large and every other cell becomes small. The model learns by contrasting the right pair against all the wrong ones.**
+**Training both encoders so that the diagonal cells become large and every other cell becomes small is called contrastive learning. The model learns by contrasting the right pair against all the wrong ones.**
 
-But saying what we want is not the same as getting it, we have to build the foresaid encoders whose weights are random, and so the table $S$ is random too, and the diagonal is no brighter than anywhere else. Nobody can handpick the millions of weights that would make the diagonal light up. The model has to find them itself, by "**learning**". Look at the table, measure how far it is from what we want, nudge every weight a little in the direction that makes it better and repeat the same over all the batches.
+But the encoders start with random weights, so the diagonal starts no brighter than any other cell, and since nobody can set millions of weights by hand, the model has to **learn** them: measure how far the table is from what we want, nudge every weight a little toward better, and repeat for every batch.
 
-To do this we need a single number that says how wrong the table is, Big when diagonal is dim and small when it is the other way round. That number is the **loss**, and backpropagation tells every weight in both encoders which way to move to shrink it. We turn our $N \times N$ table of similarities into one number that measures how wrong it is.
+Measuring how far off the table is takes a single number, big when the diagonal is dim and small when it shines. That number is the **loss**, and backpropagation tells every weight in both encoders which way to move to shrink it. So the question becomes: how do we turn an $N \times N$ table of similarities into one number?
 
 ### How CLIP turns this into a loss
 
-[CLIP](https://openai.com/index/clip/) was the first well known model trained this way, from OpenAI. To see its loss you first need to know how language models are trained, because CLIP borrows the same trick.
+[CLIP](https://openai.com/index/clip/), from OpenAI, is the model that made this kind of training famous. To see its loss you first need to know how language models are trained, because CLIP borrows the same trick.
 
 A language model reads "leaning tower of" and has to guess the next word. It outputs one score for every word in its vocabulary. These raw scores are called logits, and we write them as $z_1, z_2, \dots, z_V$ where $V$ is the size of the vocabulary. We want the score for "pisa" to be the highest.
 
-To compare scores with a correct answer, we first turn the scores into a probability distribution with a function called **Softmax**. For each score it computes the exponential and then divides by the sum of the exponentials of all scores. The results are all positive and add up to 1, $\sum_k p_k = 1$.
+To compare scores with a correct answer, we first turn the scores into a probability distribution with a function called **softmax**. For each score it computes the exponential and then divides by the sum of the exponentials of all scores. The results are all positive and add up to 1, $\sum_k p_k = 1$.
 
-$$p_k = \text{softmax}(z)_k = \frac{e^{z_k}}{\sum_{j=1}^{V} e^{z_j}}$$ ($p_k$ is the probability the model gives to word $k$, $z_k$ is that word's logit, and $j$ is a counter that runs over all $V$ words.)
+$$p_k = \text{softmax}(z)_k = \frac{e^{z_k}}{\sum_{j=1}^{V} e^{z_j}}$$
 
-The **Cross Entropy Loss** looks at the probability given to the correct answer and punishes the model when it is low. The correct answer is given as a label $y$, which is just the index of the right class. If "pisa" is word number 72 in the vocabulary, the label is $y = 72$ and the loss is
+where $p_k$ is the probability the model gives to word $k$, $z_k$ is that word's logit, and $j$ is a counter that runs over all $V$ words.
 
-$$\mathcal{L} = -\log p_y$$ ($\mathcal{L}$ is the symbol for loss and $p_y$ is the probability the model gives to the correct word.)
+The **cross entropy loss** looks at the probability given to the correct answer and punishes the model when it is low. The correct answer is given as a label $y$, which is just the index of the right class. If "pisa" is word number 72 in the vocabulary, the label is $y = 72$ and the loss is
 
-If the model gives the right word probability close to 1, $\log 1 = 0$ and the loss is almost zero. If it gives it a tiny probability, the log is a big negative number and the loss is large. There are many candidates and exactly one of them is right.
+$$\mathcal{L} = -\log p_y$$
 
-Looking back at our table $S$, Image-0 is compared against $N$ captions and with only caption-$0$ being right, its the same problem like the one we discussed here, so we can use the same loss.
+where $\mathcal{L}$ is the loss and $p_y$ is the probability the model gives to the correct word.
+
+If the model gives the right word probability close to 1, $\log 1 = 0$ and the loss is almost zero. If it gives it a tiny probability, the log is a big negative number and the loss is large. This loss fits any problem with many candidates and exactly one right answer.
+
+Now look back at our table $S$. Image 0 is compared against $N$ captions, and only caption 0 is right. That is the same kind of problem, so we can use the same loss.
 
 CLIP does the same thing to its table. Take row 0. It holds the similarity of image 0 with every caption, $S_{0,0}, S_{0,1}, \dots, S_{0,N-1}$. Treat those $N$ numbers as scores over $N$ classes. The right class is caption 0, so the label is 0. For row 1 the label is 1. For row $i$ the label is $y_i = i$. So the labels for all rows are simply $0, 1, 2, \dots, N-1$, which is exactly what `np.arange(n)` produces.
 
 CLIP does this once along the rows, which asks each image to pick its caption, and once along the columns, which asks each caption to pick its image. The final loss is the average of the two
 
-$$\mathcal{L} = \frac{1}{2}\left(\mathcal{L}_{\text{img}} + \mathcal{L}_{\text{txt}}\right)$$ ( $\mathcal{L}_{\text{img}}$ is the cross entropy averaged over the $N$ rows; every image picking its caption) and $\mathcal{L}_{\text{txt}}$ is the same averaged over the $N$ columns; every caption picking its image).
+$$\mathcal{L} = \frac{1}{2}\left(\mathcal{L}_{\text{img}} + \mathcal{L}_{\text{txt}}\right)$$
 
-As cosine similarities can never leave $[-1, 1]$, and softmax cannot turn such small gaps into a confident answer. A perfect table, where the right caption scores $1$ and every wrong one scores $-1$. With CLIP's batch of $N = 32{,}768$, the right caption gets probability
+where $\mathcal{L}_{\text{img}}$ is the cross entropy averaged over the $N$ rows (every image picking its caption) and $\mathcal{L}_{\text{txt}}$ is the same averaged over the $N$ columns (every caption picking its image).
+
+But there is a problem. Cosine similarities can never leave $[-1, 1]$, so the right caption can beat a wrong one by at most 2, and softmax cannot turn such small gaps into a confident answer. Take a perfect table, where the right caption scores $1$ and every wrong one scores $-1$. With CLIP's batch of $N = 32{,}768$, the right caption gets probability
 
 $$p = \frac{e^{1}}{e^{1} + 32{,}767 \cdot e^{-1}} \approx 0.00023$$
 
-and the loss is still about $8.4$. This means even perfect encoders would be punished.
+and the loss is still about $8.4$. The encoders cannot possibly do better than this, yet the loss keeps punishing them.
 
-The correction is, before the loss, every cell of the table is multiplied by $e^{t}$ ($t$ is a learned number called the **temperature**). The model works with $S_{ij} \cdot e^{t}$, as cosine similarities have the range $[-1,1]$ this lets the model stretch them and control how sharp softmax gets.
+To fix this, every cell of the table is multiplied by $e^{t}$ before the loss, where $t$ is a learned number called the **temperature**. The model now works with $S_{ij} \cdot e^{t}$, which lets it stretch the similarities far beyond $[-1, 1]$ and decide for itself how sharp the softmax should be.
 
-![clip loss](fig/ch1-clip-loss.svg)
+![clip loss](ch1-clip-loss.svg)
 
 Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 
@@ -124,21 +132,19 @@ loss_i = cross_entropy_loss(logits, labels, axis=1) # softmax across row, each i
 loss = (loss_i + loss_t) / 2
 ```
 
-The loss is complete, but the temperature makes something else worse, CLIP starts with $e^t \approx 14.3$ and lets it grow up to $100$, so the logits entering softmax no longer sit between $-1$ and $1$, they can reach $100$. And softmax exponentiates them. Can a computer even hold $e^{100}$?
+The loss is complete, and the temperature fixed our problem. But it quietly created a new one. CLIP starts with $e^{t} \approx 14.3$ and lets it grow up to $100$, so the logits entering softmax no longer sit between $-1$ and $1$. They can reach $100$, and softmax exponentiates them. Can a computer even hold $e^{100}$?
 
 ### Why softmax is dangerous and how to fix it
 
-The exponential grows very fast. $e^{100}$ is 26881171418161354484126255515800135873611118; a number with 44 digits. Computers store numbers in 16 or 32 bits, which gives a maximum value. A 16 bit float (FP16) cannot go past about $65504$, and $e^{12}$ is already bigger than that. If the exponential overflows that maximum, you get infinity and training breaks. Keeping numbers inside the range the computer can hold is crucial.
+The exponential grows very fast. $e^{100}$ is roughly 26881171418161354484126255515800135873611118, a number with 44 digits. Computers store numbers in a fixed number of bits, usually 16 or 32, so every format has a largest value it can hold. A 16 bit float (FP16) cannot go past $65504$, and $e^{12}$ is already bigger than that. Once an exponential passes that limit it becomes infinity, infinity divided by infinity is NaN (not a number), and training breaks.
 
-The fix is, Softmax is a fraction and if you multiply the top and the bottom of a fraction by the same number, the fraction does not change. So multiply both by $e^{-c}$ for some constant $c$. Because $e^{z_k} \cdot e^{-c} = e^{z_k - c}$, this is the same as subtracting $c$ from every score before the exponential
+To fix it, notice that softmax is a fraction, and multiplying the top and the bottom of a fraction by the same number does not change it. So multiply both by $e^{-c}$ for some constant $c$. Because $e^{z_k} \cdot e^{-c} = e^{z_k - c}$, this is the same as subtracting $c$ from every score before the exponential
 
 $$\frac{e^{z_k}}{\sum_j e^{z_j}} = \frac{e^{-c} e^{z_k}}{e^{-c}\sum_j e^{z_j}} = \frac{e^{z_k - c}}{\sum_j e^{z_j - c}}$$
 
 The factor cancels and the output is identical.
 
-
 ![stable-softmax](fig/ch1-stable-softmax.svg)
-
 
 Pick $c$ to be the largest score in the vector, $c = \max_j z_j$. Now the largest value becomes $e^{0} = 1$, and everything else is smaller than 1. Nothing can overflow. In code we write it as:
 
@@ -160,27 +166,28 @@ with np.errstate(over="ignore", invalid="ignore"):
 print("stable ", stable_softmax(x))
 ```
 
-**output**:
+**Output:**
+
 ```text
 naive  [nan nan nan]
 stable [0.66524096 0.24472847 0.09003057]
 ```
 
-This trick works but look at what it needed, to compute the probability of a single cell, we first need $c = \max_j z_j$, the largest score in the _entire_ row, and then the sum $\sum_j e^{z_j - c}$, again over the entire row. Every probability depends on every other score in its row. For a language model predicting one word that is fine. But for the full table it becomes the a bottleneck.
+So softmax is safe now. Is it perfect? Not quite. Look at what the trick needs. To compute the probability of a single cell, we first need $c = \max_j z_j$, the largest score in the _entire_ row, and then the sum $\sum_j e^{z_j - c}$, again over the entire row. Every probability depends on every other score in its row. For a language model predicting one word, that is fine. For CLIP's giant table, it becomes a bottleneck.
 
 ### The problem with CLIP at scale
 
-Contrastive learning gets better the bigger the batch (more on that below). We want $N$ as large as the hardware allows. CLIP used $N = 32{,}768$ and the cost of this loss grow with $N$.
+Contrastive learning gets better as the batch grows (more on why below), so we want $N$ as large as the hardware allows. CLIP used $N = 32{,}768$, and the cost of its loss grows with $N$.
 
 To compute softmax for one row, you must first find the maximum of the whole row, then exponentiate everything, then sum the whole row, $\sum_{j=1}^{N} e^{S_{ij}}$. A device computing that row needs the entire row in its memory. The same goes for columns and CLIP needs both.
 
-This makes it hard to split the table across many GPUs, and it makes very large batch sizes painful. Large batches matter in contrastive learning because more wrong pairs give the model more to contrast against. With a batch of $N$ you get $(N^2 - N)$ wrong pairs, doubling the batch roughly quadruples the negatives.
+This makes it hard to split the table across many GPUs, and it makes very large batch sizes painful. Large batches matter in contrastive learning because more wrong pairs give the model more to contrast against. With a batch of $N$ you get $(N^2 - N)$ wrong pairs, so doubling the batch roughly quadruples the negatives.
 
-And Softmax itself becomes the problem, its denominator ties every cell in a row together (and, for the second loss, every cell in a column), so no cell can be scored on its own. Which raises the question: do the cells really need to compete? What if we asked each pair on its own, _is this a match or not_?
+The root of the problem is softmax itself. Its denominator ties every cell in a row together (and, for the second loss, every cell in a column), so no cell can be scored on its own. That raises a question: do the cells really need to compete? What if we asked each pair on its own, _is this a match or not_?
 
 ### The sigmoid loss
 
-Instead of treating each row as a competition between $N$ captions, it treats every single cell as its own **Yes/No** question. **Is this image and this caption a match?**
+A later model, [SigLIP](https://arxiv.org/abs/2303.15343), says no. Its **sigmoid loss** stops treating each row as a competition between $N$ captions and treats every single cell as its own yes or no question: **do this image and this caption match?**
 
 This is a binary classification task, and the tool for it is the sigmoid function.
 
@@ -190,7 +197,7 @@ This is a binary classification task, and the tool for it is the sigmoid functio
 
 $$\sigma(s) = \frac{1}{1 + e^{-s}}$$
 
-Where $\sigma$ (sigma) is the sigmoid and $s$ is any score, for us a single cell $S_{ij}$, a big positive $s$ gives something close to 1, a big negative $x$ gives something close to 0, and $x = 0$ gives exactly $0.5$.
+where $\sigma$ (sigma) is the sigmoid and $s$ is any score, for us a single cell $S_{ij}$. A big positive $s$ gives something close to 1, a big negative $s$ gives something close to 0, and $s = 0$ gives exactly $0.5$.
 
 Each cell gets a label $y_{ij}$ that is 1 on the diagonal and 0 everywhere else
 
@@ -202,7 +209,7 @@ $$\mathcal{L}_{ij} = -\Big[y_{ij}\log \sigma(S_{ij}) + (1 - y_{ij})\log\big(1 - 
 
 and the total loss is the average over all $N^2$ cells.
 
-The formula looks busy but only one of its two terms is ever switched on. On the diagonal $y_{ij} = 1$, the second term vanishes and the loss is $-\log \sigma(S_{ij})$, which is small only when $\sigma(S_{ij})$ is close to 1. Off the diagonal $y_{ij} = 0$, the first term vanishes and the loss is $-\log\big(1 - \sigma(S_{ij})\big)$, which is small only when $\sigma(S_{ij})$ is close to 0.
+The formula looks busy, but only one of its two terms is ever switched on. On the diagonal $y_{ij} = 1$, the second term vanishes and the loss is $-\log \sigma(S_{ij})$, which is small only when $\sigma(S_{ij})$ is close to 1. Off the diagonal $y_{ij} = 0$, the first term vanishes and the loss is $-\log\big(1 - \sigma(S_{ij})\big)$, which is small only when $\sigma(S_{ij})$ is close to 0.
 
 The real sigmoid loss also learns a bias $b$ next to the temperature, so the model can shift all scores at once. That helps at the start of training, when almost every cell is a negative.
 
@@ -232,30 +239,29 @@ print("loss with random captions:", sigmoid_loss(img, txt_random, t, b).item())
 print("loss with matching captions:", sigmoid_loss(img, txt_matching, t, b).item())
 ```
 
-**output:**
+**Output:**
+
 ```
 positives 4 | negatives 12
 loss with random captions: 0.6071510910987854
 loss with matching captions: 0.2847801446914673
 ```
 
-
 The big win is independence. No cell needs to know about any other cell. Look at $\mathcal{L}_{ij}$ again, it only uses $S_{ij}$. There is no row maximum and no row sum. So you can cut the table into blocks, send each block to a different device and compute them separately. This is why the sigmoid loss scales to batches of a million pairs.
 
 ![sigmoid loss blocks](fig/ch1-sigmoid-loss-blocks.svg)
 
-Now lets step back for a minute and look at what we have done so far. We set out to build a model that can see and talk, and so far we have trained two encoders against each other. What do we actually keep?
+Now let's step back and look at what we have done so far. We set out to build a model that can see and talk, and so far we have trained two encoders against each other. What do we actually keep?
 
 Our vision language model only keeps the image encoder from this training, not the text one. Why pick an encoder trained this way rather than a plain image classifier?
 
 Because its image vectors were trained to line up with language. They already carry the kind of meaning text cares about. Also this training data is cheap. The internet is full of images with descriptions, like Wikipedia captions or the alt text of HTML images, which is the text shown when an image fails to load. Some descriptions are wrong or noisy, but with billions of examples the model still learns good representations.
 
-So far, our simple encoder takes in a picture and produces a vector. But we don't really know what happens inside. So, we're going to build one ourselves.
+That image encoder takes in a picture and produces a vector, and we still have no idea what happens inside. Time to build one ourselves.
 
 ---
 
 # Chapter 2. Vision Transformer
-
 
 At the end of the last chapter we left the image encoder as a black box: a picture goes in, a vector comes out. Now we open it. **The encoder we are going to build is a Transformer**, and a Transformer does not take images directly. So before we can build one for images, we must know what a Transformer expects to be fed.
 
@@ -269,7 +275,7 @@ The Transformer is a stack of identical **layers**. Each layer takes a list of $
 
 We will write the shape of that list as $[B, N, D]$. A shape lists how many entries a tensor has along each axis, so $[B, N, D]$ is a 3D block of numbers: $B$ examples, each holding $N$ tokens, each token holding $D$ numbers. $B$ is the batch size (how many examples we process at once), $N$ is the number of tokens (code often calls it `seq_len`) and $D$ is the length of each token vector (the embedding dimension, called `hidden_size` in the config and `embed_dim` inside some modules; all three names mean the same number).
 
-Careful, the letters changed meaning since chapter 1. There, $N$ was the number of image and caption pairs in a batch and $d$ was the length of the shared vector. From here on, $B$ is the batch, $N$ counts tokens and $D$ is the vector length.
+Careful: the letters have changed meaning since chapter 1. There, $N$ was the number of image and caption pairs in a batch and $d$ was the length of the shared vector. From here on, $B$ is the batch, $N$ counts tokens and $D$ is the vector length.
 
 A Transformer where every token may look at every other token is called an **encoder**. That is what we build here. A Transformer where each token may only look at the tokens before it is called a **decoder**. That is the language model.
 
@@ -291,20 +297,19 @@ Text is already a sequence. An image is a grid. The **Vision Transformer**, or *
 
 Our image encoder is a Vision Transformer.
 
-The title of that paper is the whole idea. A $16 \times 16$ patch plays the role of a word. A $224 \times 224$ image cut this way gives $196$ patches instead of $50{,}176$ pixels, so attention computes $196^2 = 38{,}416$ scores instead of about 2.5 billion. Each patch holds $16 \times 16 = 256$ pixels, so the number of tokens drops 256 times. The number of scores grows with the _square_ of the number of tokens, so it drops by $256^2 = 65{,}536$ times.
+The title of that paper is the whole idea. A $16 \times 16$ patch plays the role of a word. A $224 \times 224$ image cut this way gives $196$ patches instead of $50{,}176$ pixels, so attention computes $196^2 = 38{,}416$ scores instead of about 2.5 billion. Each patch holds $16 \times 16 = 256$ pixels, so there are 256 times fewer tokens. The number of scores grows with the _square_ of the number of tokens, so there are $256^2 = 65{,}536$ times fewer scores.
 
-The paper's second message is just as important: once the image is a sequence of patch vectors, **nothing else needs to change**. The layers are the same ones used for text.
+That is the paper's first message. The second is just as important: once the image is a sequence of patch vectors, **nothing else needs to change**. The layers are the same ones used for text.
 
-### Say Hello to ViT
+### Say hello to ViT
 
 Before we build the first piece, here is the whole machine, so you always know where the piece you are building fits.
 
 ![vision transformer](fig/ch2-vision-transformer.svg)
 
-
 A $224 \times 224$ photo comes in. It is cut into a grid of $16 \times 16$ pixel patches, 14 across and 14 down, so 196 patches. One layer then looks at each patch and turns its pixels into a list of 768 numbers. Now we have 196 vectors, one per patch, and each one describes what its patch _looks like_. But cutting the image into a list lost track of where each patch was, so we add a second vector to each one that says which slot it came from.
 
-The list then enters the big box in the middle, the **Transformer encoder**. It is a stack of identical layers, 12 in our config, and every layer does the same four things in the same order. A **norm** keeps the numbers at a steady scale, so they don't blow up or fade away as they pass through many layers (the next chapter). Then **attention**, where the patches finally talk: each patch looks at every other patch and borrows what is useful. Then another norm, and an **MLP**, a small network that works on each patch's vector by itself and digests what attention just gathered. (Each layer also has two shortcuts that add its input back to its output. They come in later chapters) After the last layer comes one final norm, and out come 196 vectors.
+The list then enters the big box in the middle, the **Transformer encoder**. It is a stack of identical layers, 12 in our config, and every layer does the same four things in the same order. A **norm** keeps the numbers at a steady scale, so they don't blow up or fade away as they pass through many layers (the next chapter). Then **attention**, where the patches finally talk: each patch looks at every other patch and borrows what is useful. Then another norm, and an **MLP**, a small network that works on each patch's vector by itself and digests what attention just gathered. (Each layer also has two shortcuts that add its input back to its output. We will meet them when we build the layer.) After the last layer comes one final norm, and out come 196 vectors.
 
 Going in, the vector for a patch of brown fur only knew it was brown fur. Coming out, it has seen the ear, the snout and the grass, so it knows it is fur _on a dog_. Same patch, same slot, but its vector now carries its context. That is what the figure means by _contextualized_.
 
@@ -321,11 +326,11 @@ Here is the same walk again, with the shape of the data after every step.
   final norm                 [B, 196, 768]
 ```
 
-The first shape puts the 3 color channels _before_ height and width. That is the order PyTorch layers expect. An image loaded from a file comes the other way round, height, width, channels, later on this moves the channels to the front. Why the second shape has 768 in front of the grid is explained later in this chapter.
+The first shape puts the 3 color channels _before_ height and width. That is the order PyTorch layers expect. An image loaded from a file comes the other way round, as height, width, channels, so the processor we build later moves the channels to the front. Why the second shape puts 768 in front of the grid will be explained later in the chapter.
 
-Look at the right column of shapes. After the patches become a sequence, the shape never changes again. That is the Transformer contract at work, $N$ vectors in, $N$ vectors out. The 196 vectors that come out are the 196 that went in, each one rewritten by everything it learned from the others.
+Look at the column of shapes. After the patches become a sequence, the shape never changes again. That is the Transformer contract at work, $N$ vectors in, $N$ vectors out. The 196 vectors that come out are the 196 that went in, each one rewritten by everything it learned from the others.
 
-If you read about the Vision Transformer anywhere else, you will meet one difference, the number 197. The original ViT was built to classify images, "this is a dog". It borrowed a trick from a text model called BERT and put one extra learnable vector at the front of the sequence, called the **CLS** token, short for classification. It carries no patch. It travels through all the layers collecting information from the patches, and at the end only the CLS vector goes into a small classification head that outputs one score per class. That is $196 + 1 = 197$ tokens.
+If you read about the Vision Transformer anywhere else, you will meet one difference: the number 197. The original ViT was built to classify images, "this is a dog". It borrowed a trick from a text model called BERT and put one extra learnable vector at the front of the sequence, called the **CLS** token, short for classification. It carries no patch. It travels through all the layers collecting information from the patches, and at the end only the CLS vector goes into a small classification head that outputs one score per class. That is $196 + 1 = 197$ tokens.
 
 We don't need any of that. We are not classifying, we want the language model to see the whole image, patch by patch. So our encoder has no CLS token and no classification head. That is why they are greyed out in the figure. Our sequence has exactly 196 tokens.
 
@@ -422,7 +427,7 @@ You will see the photo with thin white gaps between 196 small tiles. Some tiles 
 
 Now we know how many patches we want. How do we actually cut them out, and turn each one into a vector? The naive way would be to slice the image into 196 tiles like we just did, flatten each tile's $16 \times 16 \times 3 = 768$ numbers into a list, and multiply every list by the same weight matrix. It turns out one layer already does all of that in a single call.
 
-### Cutting patches with a Convolution
+### Cutting patches with a convolution
 
 A 2D convolution slides a small window, called the kernel, across an image. At each position it multiplies the pixels under the window by learned weights, adds them up and adds one learned bias, giving one number. Color images have three channels, red, green and blue, so the kernel covers all three at once. A $16 \times 16$ kernel over 3 channels looks at $16 \times 16 \times 3 = 768$ pixel values and turns them into one number. A layer can hold many kernels, each producing its own output channel, so with 768 output channels you get 768 numbers for every window position.
 
@@ -444,7 +449,7 @@ The window starts at the top left and sees the patch $\begin{pmatrix} 3 & 5 \\ 2
 
 $$3 \cdot 1 + 5 \cdot 0 + 2 \cdot 0 + 7 \cdot (-1) = 3 - 7 = -4$$
 
-Jump 2 pixels right. The window sees $\begin{pmatrix} 1 & 9 \\ 4 & 6 \end{pmatrix}$ and gives $1 - 6 = -5$. Jump down to the bottom left, $\begin{pmatrix} 8 & 0 \\ 1 & 6 \end{pmatrix}$ gives $8 - 6 = 2$. Bottom right, $\begin{pmatrix} 5 & 3 \\ 2 & 4 \end{pmatrix}$ gives $5 -4 = 1$.
+Jump 2 pixels right. The window sees $\begin{pmatrix} 1 & 9 \\ 4 & 6 \end{pmatrix}$ and gives $1 - 6 = -5$. Jump down to the bottom left, $\begin{pmatrix} 8 & 0 \\ 1 & 6 \end{pmatrix}$ gives $8 - 6 = 2$. Bottom right, $\begin{pmatrix} 5 & 3 \\ 2 & 4 \end{pmatrix}$ gives $5 - 4 = 1$.
 
 Four patches, four numbers, and they land in a $2 \times 2$ grid in the same arrangement as the patches they came from
 
@@ -454,7 +459,7 @@ $$\text{output} = \begin{pmatrix} -4 & -5 \\ 2 & 1 \end{pmatrix}$$
 
 (If you met convolution in a signal processing class, you may remember the kernel being flipped first. Deep learning libraries skip the flip, strictly that is called cross correlation, but everyone calls it convolution. Since the weights are learned, the flip would make no difference.)
 
-PyTorch agrees.
+PyTorch gives the same result.
 
 ```python
 import torch
@@ -471,7 +476,7 @@ conv.weight.data = torch.tensor([[1., 0.],
 print(conv(img).detach())
 ```
 
-output:
+**Output:**
 
 ```text
 tensor([[[[ -4., -5.],
@@ -507,36 +512,21 @@ out_linear = patches @ W.T + conv.bias                           # [1, 196, 768]
 print(torch.allclose(out_conv, out_linear, atol=1e-4))
 ```
 
-output:
+**Output:**
 
 ```text
 True
 ```
 
-(`flatten(2).transpose(1, 2)` on the first line turns the conv's grid into a list of 196 vectors so the two results can be compared. We explain it properly in a moment.)
+(`flatten(2).transpose(1, 2)` on the first line turns the conv's grid into a list of 196 vectors so the two results can be compared. We explain it properly later in the chapter.)
 
 ![convolution is linear](fig/ch2-conv-is-linear.svg)
 
 So why use the convolution at all? Because it is one line, it cuts and multiplies in a single call, and it is heavily optimized on GPUs. And because the pretrained weights we load are stored in this shape.
 
-### When windows overlap
-
-What if the stride were smaller than the kernel? The windows would overlap. For image size $H$, kernel $K$ and stride $S$, the number of positions that fit along one side is
-
-$$\left\lfloor \frac{H - K}{S} \right\rfloor + 1$$
-
-where the $\lfloor \cdot \rfloor$ brackets mean "round down to a whole number", since a window that only half fits is not counted. The $+1$ counts the very first window, the one at the left edge before any jump.
-
-With $K = 16$ and $S = 8$ on a 224 image that is $\frac{224 - 16}{8} + 1 = 26 + 1 = 27$. So $27 \times 27 = 729$ patches, each sharing half its pixels with its neighbor. More tokens, more compute. When $S = K$ the formula becomes $\frac{H - K}{K} + 1 = \frac{H}{K}$, which is our $H / P$ again.
-
-![kernel and stride](fig/ch2-kernel-stride.svg)
-(figure shows stride 8 vs stride 4; in 2D both sides count, a 224 image with kernel 16 and stride 8 gives 729 patches).
-
-Overlapping windows are also the heart of a different kind of vision model, which raises a fair question.
-
 ### Why not a CNN?
 
-Before 2020, most of the best vision models were **convolutional neural networks**, or CNNs, built from many stacked convolutions. We just used a convolution ourselves. So why not use a CNN as the image encoder?
+We just used a convolution to cut patches, and before 2020 most of the best vision models were **convolutional neural networks**, or CNNs, built from many stacked convolutions. So why not use a whole CNN as the image encoder?
 
 A CNN stacks many convolutions with small kernels, typically $3 \times 3$, that slide one pixel at a time, so the windows overlap heavily. Each layer only looks at a small neighborhood of the layer below. For the dog's ear to relate to its tail, information has to travel there layer by layer, the view widening a little each time.
 
@@ -550,11 +540,27 @@ The ViT paper measured this trade. Trained on ImageNet alone, about 1.3 million 
 
 Now remember chapter 1. Our encoder learns from billions of image and caption pairs taken from the web. Data is the one thing we have in abundance, and that is where ViT wins.
 
-One thing not to confuse. Our patch layer is a convolution, but it is not a CNN. It is a single layer whose windows never overlap. It only cuts the image and projects each patch, all the seeing is left to the Transformer.
+One thing not to confuse. Our patch layer is a convolution, but it is not a CNN. It is a single layer whose windows never overlap. It only cuts the image and projects each patch. All the seeing is left to the Transformer.
+
+### When windows overlap
+
+What would happen if ours did overlap, the way a CNN's windows do? That happens whenever the stride is smaller than the kernel. For image size $H$, kernel $K$ and stride $S$, the number of positions that fit along one side is
+
+$$\left\lfloor \frac{H - K}{S} \right\rfloor + 1$$
+
+where the $\lfloor \cdot \rfloor$ brackets mean "round down to a whole number", since a window that only half fits is not counted. The $+1$ counts the very first window, the one at the left edge before any jump.
+
+With $K = 16$ and $S = 8$ on a 224 image that is $\frac{224 - 16}{8} + 1 = 26 + 1 = 27$. So $27 \times 27 = 729$ patches, each sharing half its pixels with its neighbor. More tokens, more compute. When $S = K$ the formula becomes $\frac{H - K}{K} + 1 = \frac{H}{K}$, which is our $H / P$ again.
+
+![kernel and stride](fig/ch2-kernel-stride.svg)
+
+(The figure compares stride 8 and stride 4 along one row of pixels. In 2D both sides count, so a 224 image with kernel 16 and stride 8 gives $27 \times 27 = 729$ patches.)
+
+Overlap is what gives a CNN its slowly widening view, but in our patch layer it would only multiply the tokens, and attention pays for every token squared: 729 tokens instead of 196 means about 14 times more scores. So our patch layer keeps the stride equal to the kernel.
 
 ### From grid to sequence
 
-The convolution gave us one vector per patch. But look at the shape, $[B, 768, 14, 14]$. The patches are still arranged as a $14 \times 14$ grid, and the 768 numbers of each patch come _before_ the grid, because a convolution always puts its output channels right after the batch. That is not the list of tokens a Transformer expects.
+Back to our patch layer. The convolution gave us one vector per patch. But look at the shape, $[B, 768, 14, 14]$. The patches are still arranged as a $14 \times 14$ grid, and the 768 numbers of each patch come _before_ the grid, because a convolution always puts its output channels right after the batch. That is not the list of tokens a Transformer expects.
 
 The Transformer wants a list, not a grid. Number the dimensions of $[B, 768, 14, 14]$ as 0, 1, 2, 3. `flatten(2)` merges every dimension from index 2 onward into one, so $14 \times 14$ becomes $196$. The shape $[B, 768, 14, 14]$ becomes $[B, 768, 196]$. The grid is read row by row, so patch $(r, c)$ lands at position $14r + c$.
 
@@ -568,7 +574,7 @@ Now we have a sequence.
 
 Flattening throws away where each patch was. Patch 0 was top left, patch 195 was bottom right, but the list does not say so.
 
-Does that matter? Yes. Attention, which we build in chapter 5, treats its input like a bag of tokens. Shuffle the patches and every patch gets exactly the same result, just in the shuffled order. Without positions, a picture and the same picture with its tiles scrambled would look identical to the model.
+Does that matter? Yes. Attention, which we build later, treats its input like a bag of tokens. Shuffle the patches and every patch gets exactly the same result, just in the shuffled order. Without positions, a picture and the same picture with its tiles scrambled would look identical to the model.
 
 We fix this by adding a position vector to each patch
 
@@ -586,7 +592,7 @@ Something strange should bother you here. The model is only ever given slot numb
 
 Yet the ViT paper found that after training, the position vectors of patches in the same row became similar to each other, and so did those in the same column, and nearby patches ended up more similar than distant ones. The model rediscovered the 2D grid on its own, from nothing but a list of slots, because knowing which patches are neighbors helps it see. The authors also tried handing the model 2D coordinates directly, and it did not do meaningfully better.
 
-You don't have to take their word for it. The trained weights of the paper's base model are public, and its sizes are exactly our `VisionConfig` defaults: vectors of 768, patches of 16, images of 224, so a $14 \times 14$ grid of slots. Its position table is the trained version of the very table our `VisionEmbeddings` creates. Hugging Face stores it as a plain tensor instead of an `nn.Embedding`, but the numbers mean the same thing.
+The trained weights of the paper's base model shows its sizes are exactly as our `VisionConfig` defaults: vectors of 768, patches of 16, images of 224, so a $14 \times 14$ grid of slots. Its position table is the trained version of the table we just described. Hugging Face stores it as a plain tensor instead of an `nn.Embedding`, but the numbers mean the same thing.
 
 One difference. This model was built to classify, so it has the CLS token we talked about earlier, and its table holds $196 + 1 = 197$ rows. Row 0 belongs to CLS, which sits at no place in the image, so we drop it and keep the 196 patch slots.
 
@@ -617,7 +623,7 @@ plt.show()
 
 If you see a message about unused `classifier` weights, that is the classification head we don't need, the same one greyed out in the figure at the start of this chapter.
 
-![position similarity](fig/ch2-position-similarity.svg)
+![position similarity](ch2-position-similarity.svg)
 
 Each small map is one slot, and the dark dot marks where that slot sits. Wherever the map lights up, that slot's position vector is similar to the vector of the slot being lit, which is the model's way of saying the two are close. Look at any map and you will see a cross: its own row and its own column light up. On average, a slot's similarity to slots in its own row or column is 0.46, and to every other slot it is −0.06. Nothing in the code told the model that 196 slots form a $14 \times 14$ grid. It learned that from the images.
 
@@ -672,7 +678,7 @@ x = torch.randn(1, 3, 224, 224)       # one random "image"
 print(embeddings(x).shape)
 ```
 
-output:
+**Output:**
 
 ```text
 torch.Size([1, 196, 768])
@@ -684,8 +690,9 @@ In the first chapter we said a picture goes into the image encoder and a vector 
 
 Our vision language model skips that squeeze. It keeps every patch vector that comes out of the encoder, 196 with our config and 256 with the real weights, resizes them to the language model's width with a single linear layer, and places them into the prompt as image tokens. To the language model, each patch really does become a word.
 
-We now have 196 vectors. Each one knows what its patch looks like and where it sits. But each patch still knows nothing about any _other_ patch. The ear does not know there is a snout next to it. The encoder layers ahead will fix that by mixing the patches , and we are about to stack twelve of them.
+We now have 196 vectors. Each one knows what its patch looks like and where it sits. But each patch still knows nothing about any _other_ patch. The ear does not know there is a snout next to it. The encoder layers ahead will fix that by mixing the patches, and we are about to stack twelve of them.
 
 The moment we stack that many layers, a new problem appears. The numbers flowing through them can drift in scale from layer to layer and from batch to batch, and training starts to wobble. So before we build these layers, we need a way to keep the numbers steady.
 
 ---
+
