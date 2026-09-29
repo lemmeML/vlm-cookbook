@@ -587,12 +587,19 @@ These position vectors are not computed by a formula. They are learned. We creat
 To look them all up at once we need the numbers 0 to 195. We store them with `self.register_buffer("position_ids", torch.arange(num_positions).expand((1, -1)), persistent=False)`. A buffer is a tensor that belongs to the module and moves to the GPU with it, but is not a trainable weight. `expand((1, -1))` gives it a batch dimension of size 1, shape $[1, 196]$, where $-1$ means "keep this dimension as it is". `persistent=False` means it is not saved with the weights, since it is just the numbers 0 to 195 and can be rebuilt any time. Then the forward adds `self.position_embedding(self.position_ids)`, shape $[1, 196, 768]$, to the patches. The batch dimension of 1 is copied across all $B$ images automatically, which PyTorch calls broadcasting, so every image gets the same position vectors.
 
 ```python
-        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
-        self.register_buffer(
-            "position_ids",
-            torch.arange(self.num_positions).expand((1, -1)),   # [1, 196], the numbers 0 to 195
-            persistent=False,
+    self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
+    self.register_buffer(
+        "position_ids",
+        torch.arange(self.num_positions).expand((1, -1)),   # [1, 196], the numbers 0 to 195
+        persistent=False,
         )
+
+    def forward(self, pixel_values):
+        patch_embeds = self.patch_embedding(pixel_values)   # [B, D, 14, 14]
+        embeddings = patch_embeds.flatten(2)                # [B, D, 196], dims 2 and 3 (the grid) merged into one
+        embeddings = embeddings.transpose(1, 2)             # [B, 196, D], dim 1 (D) swapped with dim 2 (patches)
+        embeddings = embeddings + self.position_embedding(self.position_ids)   # [B, 196, D], the [1, 196, D] positions broadcast over the batch
+        return embeddings
 ```
 
 ### What the position vectors learn
