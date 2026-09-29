@@ -74,7 +74,7 @@ Row $i$ is image $i$, column $j$ is caption $j$, and the cell at row $i$ column 
 
 Picture $i$ goes with caption $i$. So the correct pairs are the cells where the row number equals the column number, $S_{ii}$. That is the diagonal of the table. Every cell off the diagonal, $S_{ij}$ with $i \neq j$, is a wrong pair. There are $N$ right pairs and $(N^2 - N)$ wrong ones.
 
-![contrastive-table](ch1-contrastive-table.svg)
+![contrastive-table](fig/ch1-contrastive-table.svg)
 
 **Training both encoders so that the diagonal cells become large and every other cell becomes small is called contrastive learning. The model learns by contrasting the right pair against all the wrong ones.**
 
@@ -120,7 +120,7 @@ and the loss is still about $8.4$. The encoders cannot possibly do better than t
 
 To fix this, every cell of the table is multiplied by $e^{t}$ before the loss, where $t$ is a learned number called the **temperature**. The model now works with $S_{ij} \cdot e^{t}$, which lets it stretch the similarities far beyond $[-1, 1]$ and decide for itself how sharp the softmax should be.
 
-![clip loss](ch1-clip-loss.svg)
+![clip loss](fig/ch1-clip-loss.svg)
 
 Here is the whole CLIP loss,`I_e` and `T_e` are the normalized image and text embeddings, each of shape $[N, d]$.
 
@@ -623,7 +623,7 @@ plt.show()
 
 If you see a message about unused `classifier` weights, that is the classification head we don't need, the same one greyed out in the figure at the start of this chapter.
 
-![position similarity](ch2-position-similarity.svg)
+![position similarity](fig/ch2-position-similarity.svg)
 
 Each small map is one slot, and the dark dot marks where that slot sits. Wherever the map lights up, that slot's position vector is similar to the vector of the slot being lit, which is the model's way of saying the two are close. Look at any map and you will see a cross: its own row and its own column light up. On average, a slot's similarity to slots in its own row or column is 0.46, and to every other slot it is −0.06. Nothing in the code told the model that 196 slots form a $14 \times 14$ grid. It learned that from the images.
 
