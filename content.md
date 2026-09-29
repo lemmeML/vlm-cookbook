@@ -521,9 +521,62 @@ True
 (`flatten(2).transpose(1, 2)` on the first line turns the conv's grid into a list of 196 vectors so the two results can be compared. We explain it properly later in the chapter.)
 
 ![convolution is linear](fig/ch2-conv-is-linear.svg)
+The code below splits our dog image into 196 patches from earlier and shows them as sequence and the final matrix form.
+
+```python
+import numpy as np
+import matplotlib.pyplot as plt
+from PIL import Image
+
+image = Image.open("dog.jpg").convert("RGB").resize((224, 224))
+x = np.array(image)                                      # [224, 224, 3]
+P = 16
+n = 224 // P                                             # 14
+
+patches = x.reshape(n, P, n, P, 3).transpose(0, 2, 1, 3, 4)   # [14, 14, 16, 16, 3]
+seq     = patches.reshape(n * n, P, P, 3)                     # [196, 16, 16, 3], k = r * 14 + c
+flat    = seq.reshape(n * n, -1)                              # [196, 768], one row per patch 
+
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.imshow(x)
+
+for i in range(1, n):
+    ax.axhline(i * P, color="white", lw=0.5)
+    ax.axvline(i * P, color="white", lw=0.5)
+for r in range(n):
+    for c in range(n):
+        ax.text(c*P + P/2, r*P + P/2, r*n + c, color="yellow", fontsize=6, ha="center", va="center")
+ax.set_title("image → 14×14 = 196 patches"); ax.axis("off")
+plt.show()
+
+# first 28 patches as a sequence (rows 0 and 1 of the grid)
+fig, axes = plt.subplots(1, 28, figsize=(20, 1.5))
+for k in range(28):
+    axes[k].imshow(seq[k]); axes[k].set_title(k, fontsize=7); axes[k].axis("off")
+plt.suptitle("sequence order: patch 0, 1, 2, ... (row by row)", y=1.15)
+plt.show()
+
+# the whole sequence as a matrix: 196 patches × 768 pixel values
+plt.figure(figsize=(10, 4))
+plt.imshow(flat, aspect="auto", cmap="gray"
+plt.xlabel("768 values = 16 × 16 × 3"); plt.ylabel("patch index 0–195")
+plt.title("[196, 768]: input to the patch embedding")
+plt.show()
+
+print(x.shape, "→", patches.shape, "→", seq.shape, "→", flat.shape)
+```
+
+**Output:**
+
+![dog-table](fig/dog-table.png)
+![dog-seq](fig/dog-sequence.png)
+![dog-emb](fig/dog-emb.png)
+
+```text
+(224, 224, 3) → (14, 14, 16, 16, 3) → (196, 16, 16, 3) → (196, 768)
+```
 
 So why use the convolution at all? Because it is one line, it cuts and multiplies in a single call, and it is heavily optimized on GPUs. And because the pretrained weights we load are stored in this shape.
-
 ### Why not a CNN?
 
 We just used a convolution to cut patches, and before 2020 most of the best vision models were **convolutional neural networks**, or CNNs, built from many stacked convolutions. So why not use a whole CNN as the image encoder?
@@ -699,6 +752,121 @@ print(embeddings(x).shape)
 ```text
 torch.Size([1, 196, 768])
 ```
+
+We can now pass the patches through the embedding layer, using pretrained ViT weights loaded into our `VisionEmbedding` class. The code shows three steps: each patch becomes a 768-dimensional content vector, a learned position vector is added, and the sum is what the transformer receives.
+
+```python
+import torch
+import torch.nn.functional as F
+import torch.nn as nn
+from types import SimpleNamespace
+from transformers import ViTModel
+import matplotlib.pyplot as plt
+
+# Definition of VisionConfig class
+class VisionConfig:
+    def __init__(
+        self,
+        hidden_size=768,
+        intermediate_size=3072,
+        num_hidden_layers=12,
+        num_attention_heads=12,
+        num_channels=3,
+        image_size=224,
+        patch_size=16,
+        layer_norm_eps=1e-6,
+        attention_dropout=0.0,
+        num_image_tokens=None,
+        **kwargs
+    ):
+        self.hidden_size = hidden_size
+        self.intermediate_size = intermediate_size
+        self.num_hidden_layers = num_hidden_layers
+        self.num_attention_heads = num_attention_heads
+        self.num_channels = num_channels
+        self.image_size = image_size
+        self.patch_size = patch_size
+        self.layer_norm_eps = layer_norm_eps
+        self.attention_dropout = attention_dropout
+        self.num_image_tokens = num_image_tokens
+
+# Definition of VisionEmbeddings class
+class VisionEmbeddings(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embed_dim = config.hidden_size
+        self.image_size = config.image_size
+        self.patch_size = config.patch_size
+
+        self.patch_embedding = nn.Conv2d(
+            in_channels=config.num_channels,
+            out_channels=self.embed_dim,
+            kernel_size=self.patch_size,
+            stride=self.patch_size,
+            padding="valid",
+        )
+        self.num_patches = (self.image_size // self.patch_size) ** 2
+        self.num_positions = self.num_patches
+        self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim)
+        self.register_buffer(
+            "position_ids",
+            torch.arange(self.num_positions).expand((1, -1)),
+            persistent=False,
+        )
+
+    def forward(self, pixel_values):
+        patch_embeds = self.patch_embedding(pixel_values)
+        embeddings = patch_embeds.flatten(2)
+        embeddings = embeddings.transpose(1, 2)
+        embeddings = embeddings + self.position_embedding(self.position_ids)
+        return embeddings
+
+vit = ViTModel.from_pretrained("google/vit-base-patch16-224", add_pooling_layer=False)
+
+cfg = SimpleNamespace(hidden_size=768, image_size=224, patch_size=16, num_channels=3)
+emb = VisionEmbeddings(cfg).eval()
+with torch.no_grad():                                   # copy ViT weights into our module
+    emb.patch_embedding.weight.copy_(vit.embeddings.patch_embeddings.projection.weight)   # [768, 3, 16, 16]
+    emb.patch_embedding.bias.copy_(vit.embeddings.patch_embeddings.projection.bias)       # [768]
+    emb.position_embedding.weight.copy_(vit.embeddings.position_embeddings[0, 1:])        # [196, 768], CLS dropped
+
+pix = torch.tensor(x).permute(2, 0, 1).float().div(255).sub(0.5).div(0.5)[None]   # [1, 3, 224, 224], ViT normalisation
+
+with torch.no_grad():
+    tokens = emb.patch_embedding(pix).flatten(2).transpose(1, 2)[0]   # [196, 768], content only
+    pos    = emb.position_embedding.weight                            # [196, 768], location only
+    out    = emb(pix)[0]                                              # [196, 768], content + location
+
+print("out == tokens + pos:", torch.allclose(out, tokens + pos, atol=1e-5))
+print(f"avg norm  patch: {tokens.norm(dim=-1).mean():.1f}   position: {pos.norm(dim=-1).mean():.1f}")
+
+# the three [196, 768] matrices
+fig, ax = plt.subplots(1, 3, figsize=(15, 4))
+for a, m, t in zip(ax, [tokens, pos, out], ["patch embedding", "+ position embedding", "= final embedding"]):
+    a.imshow(m.detach().cpu().numpy(), aspect="auto", cmap="coolwarm", vmin=-3, vmax=3)
+    a.set_title(f"{t}  [196, 768]"); a.set_xlabel("768 dims"); a.set_ylabel("patch index")
+plt.tight_layout(); plt.show()
+
+# pick one patch and ask: which slots look like it?
+r, c = 7, 7                                             # move this onto the dog
+k = r * n + c
+def sim_map(v):
+    v = F.normalize(v, dim=-1)
+    return (v @ v[k]).view(n, n)                        # cosine of patch k with all 196, back to 14×14
+
+fig, ax = plt.subplots(1, 4, figsize=(16, 4))
+ax[0].imshow(x); ax[0].add_patch(plt.Rectangle((c*P, r*P), P, P, fill=False, ec="red", lw=2))
+ax[0].set_title(f"patch {k}")
+for a, m, t in zip(ax[1:], [tokens, pos, out], ["patch only: similar content", "position only: nearby slots", "patch + position"]):
+    a.imshow(sim_map(m).detach().cpu().numpy(), cmap="Oranges"); a.set_title(t)
+for a in ax: a.axis("off")
+plt.show()
+```
+
+**Output:**
+![patch+pos](fig/patch+pos.png)
+![similar](fig/similar.png)
 
 ### Where these vectors are going
 
