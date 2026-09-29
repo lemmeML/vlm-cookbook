@@ -704,7 +704,7 @@ torch.Size([1, 196, 768])
 
 In the first chapter we said a picture goes into the image encoder and a vector comes out. That was true while the encoder was being trained. To compare an image with a caption you need one vector per image, so during that training all the patch vectors are squeezed into a single vector by a small pooling layer at the end.
 
-Our vision language model skips that squeeze. It keeps every patch vector that comes out of the encoder, 196 with our config and 256 with the real weights, resizes them to the language model's width with a single linear layer, and places them into the prompt as image tokens. To the language model, each patch really does become a word.
+Our vision language model skips that squeeze. It keeps every patch vector that comes out of the encoder, resizes them to the language model's width with a single linear layer, and places them into the prompt as image tokens. To the language model, each patch really does become a word.
 
 We now have 196 vectors. Each one knows what its patch looks like and where it sits. But each patch still knows nothing about any _other_ patch. The ear does not know there is a snout next to it. The encoder layers ahead will fix that by mixing the patches, and we are about to stack twelve of them.
 
