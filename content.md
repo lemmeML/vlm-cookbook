@@ -1237,7 +1237,7 @@ after gamma and beta     spread from 0.094 to 0.148
 
 ![norm-output](fig/ch3-norm-output.png)
 
-Each map puts the spread of every patch at the place where that patch sits in the photo, and all three maps share one color scale. Read them from left to right. They are the whole chapter in three pictures.
+Each map puts the spread of every patch at the place where that patch sits in the photo, and all three maps share one color scale.
 
 Before the norm, the spread changes from patch to patch, from 0.394 to 1.351. The widest patch is about $1.351 / 0.394 \approx 3.4$ times wider than the narrowest. You will not find a clean outline of the dog in this map, and the last chapter tells you why: every vector is the patch's content plus its position vector, so its size mixes what the patch shows with where it sits. Either way, this is exactly what the first layer would receive without a norm: numbers whose size depends on the photo, the patch and the slot. A different photo would give a different map, and the layer would never know which size is coming.
 
