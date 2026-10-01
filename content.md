@@ -881,3 +881,397 @@ We now have 196 vectors. Each one knows what its patch looks like and where it s
 The moment we stack that many layers, a new problem appears. The numbers flowing through them can drift in scale from layer to layer and from batch to batch, and training starts to wobble. So before we build these layers, we need a way to keep the numbers steady.
 
 ---
+
+# Chapter 3. Keeping the Numbers Steady
+
+At the end of the last chapter we had 196 patch vectors, each 768 numbers long, ready to enter a stack of twelve encoder layers. When these numbers flow through all these layers they can drift in scale and training starts to wobble. So before building the layer, we will build the small piece that stops the drift. It is the norm you saw in the ViT figure earlier.
+
+> **Main Idea: Before every layer, shift and rescale each token's vector so its numbers have a mean of 0 and a spread of 1, using only that token's own numbers.**
+
+### Why the numbers drift
+
+Start with the smallest piece of a layer, one neuron of a linear layer. It takes the dot product of its input $\mathbf{x}$ with its weight vector $\mathbf{w}$ and adds a bias $b$
+
+$$y = \mathbf{w} \cdot \mathbf{x} + b$$
+
+where $y$ is the output of the neuron, a single number.
+
+Take $\mathbf{w} = [0.5, -1, 2]$, $b = 1$ and the input $\mathbf{x} = [1, 2, 3]$. The dot product is $0.5 - 2 + 6 = 4.5$, so $y = 4.5 + 1 = 5.5$. Now double the input to $[2, 4, 6]$. The dot product doubles to $1 - 4 + 12 = 9$, and $y = 10$. The size of the output follows the size of the input.
+
+The gradient follows it too.
+
+Backpropagation asks how much $y$ changes when one weight $w_i$ moves a little, which is $x_i$
+
+$$\frac{\partial y}{\partial w_i} = x_i$$
+
+Every weight's gradient carries its input $x_i$ as a factor. Double the input and you double the gradient, and with it the step that gradient descent takes
+
+$$\mathbf{w} \leftarrow \mathbf{w} - \eta , \frac{\partial \mathcal{L}}{\partial \mathbf{w}}$$
+
+where $\eta$ (eta) is the learning rate, the small number that sets the size of each step, and $\mathcal{L}$ is the loss.
+
+![neuron-input](fig/ch3-neuron-input.svg)
+
+Now put this neuron deep inside a network, during training. Its input is not a photo. It is the output of the layer below, and the layer below changes its weights after every batch. So follow the chain: the layer below updates its weights, the numbers it sends up change in size, our layer's output changes, the loss changes, the gradients change, and our layer's weights take a step of a different size than before.
+
+Every layer's weights were tuned for inputs of a certain size, and that size keeps moving under them. Each layer ends up chasing a moving target. The loss jumps around instead of sliding down, and we are forced to use a small learning rate so the jumps don't throw training off course.
+
+![covariate shift](fig/ch3-covariate-shift.svg)
+
+This drift in what a layer receives, caused by the layers below it changing during training, is called **internal covariate shift**. The name comes from the 2015 paper that introduced batch normalization, which we will meet later in the chapter. A later study ([Santurkar et al., 2018](https://arxiv.org/abs/1805.11604)) found that normalization still improves training even when this drift is deliberately put back in. Its authors argued that its main benefit is making the loss change more smoothly as the weights move, allowing the optimizer to take larger steps without destabilizing training. Both explanations point to the same practical remedy: keep the numbers entering each layer at a relatively steady scale.
+
+### Twelve layers make it worse
+
+A drift inside one layer is bad. A stack of layers multiplies it.
+
+Measure how spread out the numbers of a vector are. Every layer multiplies that spread by some factor, a bit more than 1 or a bit less, depending on its weights. Nothing forces that factor to be exactly 1, and training keeps changing it. Now stack twelve layers. A factor of $1.2$ per layer becomes
+
+$$1.2^{12} \approx 8.9$$
+
+and a factor of $0.8$ per layer becomes
+
+$$0.8^{12} \approx 0.069$$
+
+A 20 percent change per layer turns into numbers almost 9 times too big, or about 15 times too small, after twelve layers. The model we load has 27 layers, and there the same factors give about $137$ and about $0.0024$.
+
+We build two stacks of twelve linear layers and sends a random sequence of 196 tokens through each. In the first stack every layer shrinks the spread by about 0.8, in the second every layer grows it by about 1.2. `std()` measures the spread.
+
+(We set the size of the weights with `nn.init.normal_`, using a spread of $\text{gain} / \sqrt{768}$. Each output number is a sum of 768 products, and weights of that size make the sum come out about `gain` times as spread out as the input.)
+
+```python
+import torch
+import torch.nn as nn
+
+torch.manual_seed(0)
+config = VisionConfig()
+D = config.hidden_size
+
+def make_stack(gain):
+    layers = []
+    for _ in range(config.num_hidden_layers):
+        layer = nn.Linear(D, D, bias=False)
+        nn.init.normal_(layer.weight, std=gain / D ** 0.5)   # each layer multiplies the spread by about gain
+        layers.append(layer)
+    return layers
+
+x = torch.randn(1, 196, D)                                  # [1, 196, 768], spread about 1
+for gain in (0.8, 1.2):
+    h = x
+    for layer in make_stack(gain):
+        h = layer(h)
+    print(f"gain {gain}: spread after {config.num_hidden_layers} layers = {h.std().item():.4f}")
+```
+
+**Output:**
+
+```text
+gain 0.8: spread after 12 layers = 0.0694
+gain 1.2: spread after 12 layers = 8.8254
+```
+
+The two spreads, 0.0694 and 8.8254, land right on our predictions of about 0.069 and 8.9. The input was the same and only the weights differed, yet after twelve layers one stack whispers and the other shouts.
+
+But there is a problem. Every layer in a real network sits somewhere between these two stacks, and training moves it around all the time. So the layer above can never know what size of numbers is coming. To fix this, we force the numbers entering every layer back to one fixed size, no matter what the layers below did. To do that we first need a way to measure "size".
+
+### Mean and spread
+
+Two numbers describe a list of numbers well enough for our purpose: where it sits, and how wide it is.
+
+The **mean** is where it sits, the plain average. For a vector of $D$ numbers
+
+$$\mu = \frac{1}{D}\sum_{i=1}^{D} x_i$$
+
+where $\mu$ (mu) is the mean and $x_i$ is the $i$-th number of the vector.
+
+The **variance** measures how wide it is. It is the average squared distance from the mean
+
+$$\sigma^2 = \frac{1}{D}\sum_{i=1}^{D} \left(x_i - \mu\right)^2$$
+
+where $\sigma^2$ (sigma squared) is the variance. Squaring makes every distance positive, so numbers below the mean and above it both count. Its square root, $\sigma$, is the **standard deviation**, which brings the result back to the units of the numbers themselves. The standard deviation is the spread that `std()` measured above.
+
+Normalizing takes two steps. Subtract the mean from every number, so the new mean is 0. Then divide every number by the standard deviation, so the new spread is 1
+
+$$\hat{x}_i = \frac{x_i - \mu}{\sigma}$$
+
+where $\hat{x}_i$ (x hat) is the $i$-th normalized number.
+
+Try it on $\mathbf{x} = [2, 4, 6, 8]$. The mean is $\mu = \frac{2 + 4 + 6 + 8}{4} = 5$. Subtract it and you get $[-3, -1, 1, 3]$. The squares are $9, 1, 1, 9$, so the variance is $\sigma^2 = \frac{9 + 1 + 1 + 9}{4} = 5$ and the standard deviation is $\sigma = \sqrt{5} \approx 2.236$. Divide and you get
+
+$$\hat{\mathbf{x}} \approx [-1.34, -0.45, 0.45, 1.34]$$
+
+Check it. The four numbers add up to 0, so the mean is 0. Their squares are exactly $\frac{9}{5}, \frac{1}{5}, \frac{1}{5}, \frac{9}{5}$, which average to $\frac{20}{5} \cdot \frac{1}{4} = 1$, so the spread is 1.
+
+Now try $[20, 40, 60, 80]$, the same vector 10 times bigger. The mean is 50, the distances are $[-30, -10, 10, 30]$, the variance is $\frac{900 + 100 + 100 + 900}{4} = 500$ and $\sigma = \sqrt{500} \approx 22.36$. Divide, and you get exactly the same $[-1.34, -0.45, 0.45, 1.34]$. Try $[102, 104, 106, 108]$, the first vector moved up by 100. The mean is 105, the distances are again $[-3, -1, 1, 3]$, and the result is again the same.
+
+Normalizing throws away how big the numbers are and where they sit and keeps the pattern about which numbers are bigger than the others, and by how much compared to the rest. Whatever the layers below do to the size, the layer above always receives numbers with mean 0 and spread 1.
+
+![normalization](fig/ch3-normalization.svg)
+
+So in a batch holding $B$ images, each with 196 tokens of 768 numbers, which numbers do we average over? We could take one feature and average it across the images of the batch, or take one token and average across its own 768 numbers. The first choice came first.
+
+### Batch normalization
+
+The first widely used answer was **Batch Normalization** ([Ioffe and Szegedy, 2015](https://arxiv.org/abs/1502.03167)), usually called batch norm. It was built for CNNs. Think of the batch as a table with one row per example and one column per feature. Batch norm works down each column: for each feature, it computes the mean and variance over all the examples in the batch
+
+$$\mu_f = \frac{1}{B}\sum_{b=1}^{B} x_{b,f} \qquad \sigma_f^2 = \frac{1}{B}\sum_{b=1}^{B} \left(x_{b,f} - \mu_f\right)^2$$
+
+where $x_{b,f}$ is feature $f$ of example $b$, and $\mu_f$ and $\sigma_f^2$ are the mean and variance of feature $f$ across the $B$ examples.
+
+It works very well for CNNs trained with big batches. But there is a problem. The normalized value of an example depends on whatever else happens to be in its batch.
+
+Take the photo of our dog whose first feature is 2, in a batch of 2. If its batch mate has a 4 in that feature, the mean is 3, the distances are $-1$ and $1$, the variance is 1, and the dog's feature becomes $\frac{2 - 3}{1} = -1$. If its batch mate has a 0 instead, the mean is 1, the distances are $1$ and $-1$, the variance is again 1, and the dog's feature becomes $\frac{2 - 1}{1} = 1$. Same dog, same number, opposite sign, only because of its neighbor.
+
+Real batches are bigger, so the effect is milder, but it never goes away. The statistics are only reliable when batches are large, and they get noisy when batches are small. At inference you often have a single image and no batch at all, so batch norm keeps running averages from training and switches to them, which means the layer behaves differently in training and in inference. Text makes it worse still, since sentences have different lengths and the padding would leak into the averages.
+
+What if each token were normalized using only its own numbers?
+
+### Layer normalization
+
+**Layer normalization** ([Ba, Kiros and Hinton, 2016](https://arxiv.org/abs/1607.06450)), or layer norm, fixes this by turning the direction around. It works along each row: one mean and one variance per token, computed over that token's own $D$ numbers. These are exactly the $\mu$ and $\sigma^2$ of the section on mean and spread. Nothing else in the batch is involved.
+
+In our tensor of shape $[B, 196, 768]$, that means each of the $B \times 196$ token vectors is normalized on its own, over its 768 numbers, which is the last axis. In code, the mean is taken with `dim=-1`. A patch of sky and a patch of fur are each rescaled by their own statistics. Your image comes out the same whether it sits in a batch of 1 or a batch of 1,000, in training or in inference.
+
+![batch norm vs layer norm](fig/ch3-batchnorm-vs-layernorm.svg)
+
+This is why Transformers almost always use layer norm, or a close cousin of it, rather than batch norm.
+
+### The learned scale and shift
+
+But forcing every token to mean 0 and spread 1 could erase something useful. Maybe a layer works best when some of its numbers are larger than others, or centered away from zero. Normalization should steady the numbers, not decide them for the model.
+
+To fix this, layer norm ends with a learned scale and a learned shift
+
+$$y_i = \gamma_i , \hat{x}_i + \beta_i$$
+
+where $\gamma_i$ (gamma) is the learned scale for position $i$ and $\beta_i$ (beta) is the learned shift. There is one $\gamma_i$ and one $\beta_i$ for each of the $D$ positions, so each is a vector of $D$ numbers, shared by every token. They start at $\gamma = 1$ and $\beta = 0$, so at first layer norm is pure normalization, and training moves them wherever helps.
+
+Take our normalized $[-1.34, -0.45, 0.45, 1.34]$ with $\gamma = 2$ and $\beta = 1$ at every position. Each number is doubled and then raised by 1, which gives about $[-1.68, 0.11, 1.89, 3.68]$. The mean is now 1 and the spread is 2.
+
+Doesn't that bring the drift back? No. The drift came from sizes that change with every batch, following whatever the layers below happen to send. $\gamma$ and $\beta$ are weights of the norm itself. They are the same for every token and every batch, and they only change slowly, through the loss. The layers below can do whatever they like to the size of their output, and the size that comes out of the norm is still set by $\gamma$ and $\beta$ alone.
+
+### Guarding against zero
+
+One danger is left in the formula. We divide by $\sigma$. What if a token's numbers are all equal, say $[5, 5, 5, 5]$? The mean is 5, every distance is 0, so $\sigma = 0$, and we compute $\frac{0}{0}$. That gives NaN, the same NaN that broke softmax in chapter 1, and one NaN spreads to everything it touches.
+
+To fix this, a tiny number $\epsilon$ (epsilon) is added to the variance before the square root. The full recipe of layer norm is
+
+$$\hat{x}_i = \frac{x_i - \mu}{\sqrt{\sigma^2 + \epsilon}} \qquad y_i = \gamma_i , \hat{x}_i + \beta_i$$
+
+where $\epsilon$ is the `layer_norm_eps=1e-6` in our `VisionConfig`, which is 0.000001.
+
+For $[5, 5, 5, 5]$ the division becomes $\frac{0}{\sqrt{0.000001}} = \frac{0}{0.001} = 0$, which is safe. For an ordinary token, like $[2, 4, 6, 8]$ with $\sigma^2 = 5$, adding 0.000001 changes nothing you would notice.
+
+### Layer norm by hand
+
+Here is the recipe in code, applied to $[2, 4, 6, 8]$ and to the same vector 10 times bigger, one token per row.
+
+We compute the variance ourselves, as the average of the squared distances. PyTorch's `var()` divides by $D - 1$ by default instead of $D$, a correction statisticians use when they estimate a variance from a small sample. Layer norm divides by $D$. On 4 numbers the difference is large: $\frac{20}{3} \approx 6.67$ instead of $5$.
+
+```python
+def layer_norm(x, gamma, beta, eps):
+    mean = x.mean(dim=-1, keepdim=True)                     # [2, 1], one mean per token
+    var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)      # [2, 1], divides by D, not D - 1
+    x_hat = (x - mean) / torch.sqrt(var + eps)              # mean 0, spread 1
+    return gamma * x_hat + beta
+
+x = torch.tensor([[2., 4., 6., 8.],
+                  [20., 40., 60., 80.]])                    # [2, 4], two tokens of 4 numbers
+gamma, beta = torch.ones(4), torch.zeros(4)                 # the starting values
+print(layer_norm(x, gamma, beta, eps=config.layer_norm_eps))
+
+ln = nn.LayerNorm(4, eps=config.layer_norm_eps)
+print(ln(x).detach())
+
+flat = torch.tensor([[5., 5., 5., 5.]])                     # [1, 4], a token whose numbers are all equal
+print(layer_norm(flat, gamma, beta, eps=config.layer_norm_eps))
+print(layer_norm(flat, gamma, beta, eps=0.0))               # no guard
+```
+
+**Output:**
+
+```text
+tensor([[-1.3416, -0.4472, 0.4472, 1.3416], [-1.3416, -0.4472, 0.4472, 1.3416]]) tensor([[-1.3416, -0.4472, 0.4472, 1.3416], [-1.3416, -0.4472, 0.4472, 1.3416]]) tensor([[0., 0., 0., 0.]]) tensor([[nan, nan, nan, nan]])
+```
+
+In the first two results, both rows show the numbers we worked out by hand, about $-1.34, -0.45, 0.45, 1.34$, and our function agrees with PyTorch's. The flat token gives four clean zeros with $\epsilon$, and four NaNs without it. You write this function once to understand it. In the model we always use `nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)`, which does the same computation and holds $\gamma$ and $\beta$ for you. It stores $\gamma$ under the name `weight` and $\beta$ under the name `bias`, and those are the names the pretrained checkpoint uses too.
+
+Always pass `eps` explicitly. `nn.LayerNorm` defaults to `1e-5`, but the pretrained encoder was trained with `1e-6`. Leave it out and the model still loads and runs without any error, it just computes slightly different numbers from the ones it was trained on. The config is where that number lives, so take it from there.
+
+### Layer norm on our patches
+
+Now use it on the patch vectors that our module from the last chapter produces. We make one random image and a second copy with every pixel value multiplied by 10, send both through `VisionEmbeddings`, and look at the spread of the first token before and after the norm.
+
+```python
+torch.manual_seed(0)
+config = VisionConfig()
+embeddings = VisionEmbeddings(config)
+norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
+image = torch.randn(1, 3, 224, 224)                         # one random "image"
+x = torch.cat([image, image * 10])                          # [2, 3, 224, 224], the image, then every pixel times 10
+with torch.no_grad():
+    h = embeddings(x)                                       # [2, 196, 768]
+    out = norm(h)                                           # [2, 196, 768], every token normalized on its own
+
+print(out.shape)
+print("spread of token 0, before:", h[:, 0].std(dim=-1, unbiased=False))     # [2], one value per image
+print("spread of token 0, after: ", out[:, 0].std(dim=-1, unbiased=False))   # [2]
+print("mean of token 0, after:   ", out[:, 0].mean(dim=-1))                  # [2]
+print("gamma", tuple(norm.weight.shape), "beta", tuple(norm.bias.shape))
+```
+
+**Output:**
+
+```text
+torch.Size([2, 196, 768])
+spread of token 0, before: tensor([1.1104, 5.7675])
+spread of token 0, after: tensor([1.0000, 1.0000])
+mean of token 0, after: tensor([-4.9671e-09, 3.5701e-09])
+gamma (768,) beta (768,)
+```
+
+The shape does not change, $[2, 196, 768]$ in and out. Layer norm keeps the Transformer contract: $N$ vectors in, $N$ vectors of the same length out. Before the norm, the second image's token is spread out much more than the first $[1.1104, 5.7675]$. After the norm, both spreads are 1 up to rounding, $[1.0000, 1.0000]$. The means come out as tiny numbers such as $10^{-9}$ rather than an exact 0, because computers round every result a little.
+
+The two normalized tokens are not the same, unlike $[2, 4, 6, 8]$ and $[20, 40, 60, 80]$ earlier. Multiplying the pixels by 10 multiplies the patch projection by 10, but the bias of the projection and the position embedding are added unchanged, so the second token is not exactly 10 times the first. Normalization still gives both the same spread, which is all it promises.
+
+$\gamma$ and $\beta$ each hold 768 numbers, so one norm has $2 \times 768 = 1{,}536$ parameters. Every encoder layer has two norms and one final norm follows the stack, so our config has $2 \times 12 + 1 = 25$ norms and $25 \times 1{,}536 = 38{,}400$ norm parameters. The real model has $2 \times 1{,}152 = 2{,}304$ per norm and $2 \times 27 + 1 = 55$ norms, so $55 \times 2{,}304 = 126{,}720$. That is tiny next to the millions of weights in attention and the MLP.
+
+### Twelve layers, steady again
+
+Now go back to the two stacks from the start of the chapter, and put a layer norm in front of every layer.
+
+```python
+torch.manual_seed(0)
+x = torch.randn(1, 196, D)                                  # [1, 196, 768]
+for gain in (0.8, 1.2):
+    h = x
+    for layer in make_stack(gain):
+        norm = nn.LayerNorm(D, eps=config.layer_norm_eps)   # gamma 1, beta 0, pure normalization
+        h = layer(norm(h))                                  # the norm resets the spread to 1 before every layer
+    print(f"gain {gain}: spread after {config.num_hidden_layers} layers = {h.std().item():.4f}")
+```
+
+**Output:**
+
+```text
+gain 0.8: spread after 12 layers = 0.7990
+gain 1.2: spread after 12 layers = 1.1975
+```
+
+The first stack now ends at 0.7990 and the second at 1.1975, right where we expected, near 0.8 and 1.2. The last layer still multiplies the spread by its own factor, but it only ever receives numbers of spread 1, so nothing piles up from the layers before it. Twelve factors multiplied together became one.
+
+### What the first layer really receives
+
+So far our norms have only seen numbers we made up. The ViT we loaded in the last chapter is fully trained, and the very first thing its first encoder layer does is a layer norm. Let's give it the dog from the last chapter.
+
+First the photo has to become numbers this model expects. Dividing by 255 puts every pixel value between 0 and 1. Subtracting 0.5 and dividing by 0.5 then puts it between −1 and 1. Notice that this is a normalization too, with one difference: the 0.5 and 0.5 are fixed numbers, the same for every image, not statistics computed from each image the way layer norm computes them from each token. The processor we build later will do this step for us. Our real model uses the same 0.5 and 0.5.
+
+Then we take the `VisionEmbeddings` you wrote in the last chapter, copy the trained patch weights and position vectors into it, and compare three versions of the same 196 vectors: as they leave the embeddings, after a plain norm with $\gamma = 1$ and $\beta = 0$, and after the trained norm with its learned $\gamma$ and $\beta$. This model uses $\epsilon = 10^{-12}$ instead of our $10^{-6}$, so we read it from its own config.
+
+To find the trained norm, the code looks for the first layer norm inside the model and prints its name. In our own encoder the same norm will be called `layer_norm1`.
+
+Hugging Face also adds a CLS token, so its first norm sees 197 tokens, not 196. We run it on those 197 too and check whether our 196 patches come out the same. This check also tests your code from the last chapter. Hugging Face builds its patch vectors with its own code, and you built yours with `VisionEmbeddings`. If your patch cutting, flattening, transpose or position lookup has a mistake anywhere, the two will not match and the check prints `False`.
+
+```python
+# VisionConfig and VisionEmbeddings are the classes you wrote in the last chapter.
+# If they are wrong, the "same with or without CLS" check below prints False.
+import numpy as np
+from PIL import Image
+from transformers import ViTModel
+
+vit = ViTModel.from_pretrained("google/vit-base-patch16-224", add_pooling_layer=False).eval()
+config = VisionConfig()                # same sizes as this checkpoint
+emb = VisionEmbeddings(config).eval()  # your module, with the trained weights copied in
+with torch.no_grad():
+    emb.patch_embedding.weight.copy_(vit.embeddings.patch_embeddings.projection.weight)# [768, 3, 16, 16]
+    emb.patch_embedding.bias.copy_(vit.embeddings.patch_embeddings.projection.bias)    # [768]
+    emb.position_embedding.weight.copy_(vit.embeddings.position_embeddings[0, 1:])        # [197, 768] -> [196, 768], CLS row dropped
+
+photo = np.array(Image.open("dog.jpg").convert("RGB").resize((224, 224)))                 # [224, 224, 3]
+pix = torch.tensor(photo).permute(2, 0, 1).float().div(255).sub(0.5).div(0.5)[None]      # [1, 3, 224, 224], values in [-1, 1]
+
+norms = [(name, m) for name, m in vit.named_modules() if isinstance(m, nn.LayerNorm)]
+ln_name, ln_real = norms[0]                                           # the first norm of the first encoder layer
+print("first norm:", ln_name)
+ln_plain = nn.LayerNorm(config.hidden_size, eps=vit.config.layer_norm_eps).eval()   # gamma 1, beta 0
+
+with torch.no_grad():
+    patches = emb(pix)[0]            # [1, 196, 768] -> [196, 768]
+    plain = ln_plain(patches)        # [196, 768], every patch at mean 0, spread 1
+    trained = ln_real(patches)       # [196, 768], then the trained scale and shift
+    full = ln_real(vit.embeddings(pix))[0, 1:] 
+    # [1, 197, 768] -> [196, 768], CLS normalized too, then dropped
+
+print("same with or without CLS:", torch.allclose(trained, full, atol=1e-5))
+print(f"gamma from {ln_real.weight.min():.2f} to {ln_real.weight.max():.2f}, "
+      f"beta from {ln_real.bias.min():.2f} to {ln_real.bias.max():.2f}")
+
+side = config.image_size // config.patch_size       # 14 patches per side
+stages = {"before the norm": patches, "normalized": plain, "after gamma and beta": trained}
+spreads = {t: m.std(dim=-1, unbiased=False).view(side, side) for t, m in stages.items()}   # [196] -> [14, 14] each
+for t, s in spreads.items():
+    print(f"{t:22s} spread from {s.min():.3f} to {s.max():.3f}")
+
+vmax = max(s.max() for s in spreads.values()).item()  # one color scale for all three maps
+fig, ax = plt.subplots(1, 4, figsize=(16, 4))
+ax[0].imshow(photo); ax[0].set_title("image")
+for a, (t, s) in zip(ax[1:], spreads.items()):
+    im = a.imshow(s.numpy(), cmap="Oranges", vmin=0, vmax=vmax); a.set_title(t)
+fig.colorbar(im, ax=ax[1:].tolist(), shrink=0.8)
+for a in ax: a.axis("off")
+plt.show()
+```
+
+**Output:**
+
+```text
+first norm: layers.0.layernorm_before
+same with or without CLS: True
+gamma from 0.03 to 0.23, beta from -0.14 to 0.20
+before the norm          spread from 0.394 to 1.351
+normalized               spread from 1.000 to 1.000
+after gamma and beta     spread from 0.094 to 0.148
+```
+
+![norm-output](fig/ch3-norm-output.png)
+
+Each map puts the spread of every patch at the place where that patch sits in the photo, and all three maps share one color scale. Read them from left to right. They are the whole chapter in three pictures.
+
+Before the norm, the spread changes from patch to patch, from 0.394 to 1.351. The widest patch is about $1.351 / 0.394 \approx 3.4$ times wider than the narrowest. You will not find a clean outline of the dog in this map, and the last chapter tells you why: every vector is the patch's content plus its position vector, so its size mixes what the patch shows with where it sits. Either way, this is exactly what the first layer would receive without a norm: numbers whose size depends on the photo, the patch and the slot. A different photo would give a different map, and the layer would never know which size is coming.
+
+After the plain norm, every patch has spread exactly 1.000, and the map turns one flat color. Sizes are gone, patterns are kept. Whatever the photo, the first layer now receives patches of one size.
+
+After the trained $\gamma$ and $\beta$, the spread is between 0.094 and 0.148. Training did not keep spread 1. It picked something much smaller, and the numbers show why: $\gamma$ runs from 0.03 to 0.23, so numbers of spread 1 multiplied by gammas of that size come out with a spread of about 0.1. Don't read meaning into 0.1 itself. Attention multiplies these numbers by its own weights next, so training is free to pick a scale here and make up for it there.
+
+Notice that the patches are not exactly equal any more, 0.094 to 0.148. Each position has its own $\gamma$ and $\beta$, so a patch whose large numbers land where $\gamma$ is large comes out a little wider. But compare the ranges: about 3.4 times between the widest and narrowest patch before the norm, about $0.148 / 0.094 \approx 1.6$ after it. And there is one difference that matters more than the ranges. Before the norm, the size of a patch was set by the photo. After it, the size is set by $\gamma$ and $\beta$, fixed weights that are the same for every photo. Show this model a dark photo, a bright photo or a photo of something else entirely, and the middle map is always flat, and the right map always stays in the same small range, set by $\gamma$ and $\beta$.
+
+The first line of the output reads `True`. Hugging Face normalized 197 tokens, CLS included, and we normalized 196, yet the patches came out the same. Each token is normalized using only its own 768 numbers, so removing the CLS token cannot change any other token. With batch norm, every token would have depended on the ones beside it.
+
+That is the main idea of this chapter, seen on a real photo through a real trained model: before every layer, each token is brought to one size using only its own numbers, and the only size it can end up with is the one training chose.
+
+### Where the norms sit
+
+Here is where the 25 norms go in our encoder, with the names used by the checkpoint of the real model we load later. The layers are numbered from 0, the way the code counts them, just like the `layers.0` you saw in the output above.
+
+```text
+  patch vectors      [B, 196, 768]
+  layer 0            layer_norm1 -> attention -> layer_norm2 -> MLP
+  layer 1            layer_norm1 -> attention -> layer_norm2 -> MLP
+  ...
+  layer 11           layer_norm1 -> attention -> layer_norm2 -> MLP
+  post_layernorm     [B, 196, 768]
+```
+
+(The two shortcuts inside every layer are left out of this picture. We will add them when we build the layer.)
+
+Each norm sits in front of the part it protects. Attention and the MLP, the two parts inside a layer that do the real work, are often called sublayers, and both always receive steady numbers. This arrangement, norm first and the sublayer after, is called pre norm. The ViT paper uses it, which is why Hugging Face named its first norm `layernorm_before`. The original Transformer of 2017 placed each norm after its sublayer instead. Putting the norm first became the standard because deep stacks train more steadily that way ([Xiong et al., 2020](https://arxiv.org/abs/2002.04745)).
+
+Pre norm leaves one gap. The norms inside the layers only steady what goes into attention and the MLP. The main stream of vectors that runs from layer to layer is never normalized itself, which will make more sense once the shortcuts are in. So one last norm, `post_layernorm`, steadies the 196 vectors on their way out of the encoder.
+
+The language model also normalizes before its sublayers, but with a slimmer cousin of layer norm called RMSNorm. It skips subtracting the mean and keeps only the rescaling, with its own $\epsilon$. We will build it with the decoder.
+
+Notice what the norm does not do. Like the patch embedding, it works on each token alone. It reads one token's 768 numbers and nothing else, which is exactly why the CLS token could be dropped without changing anything. So after the norm the ear still knows nothing about the snout. The norm only makes sure that, when the patches finally start to talk, they all speak at the same volume. The talking itself is attention's job.
+
+We now have the piece that keeps every layer's input steady. But steady inputs are not enough to make a deep stack train well. Every layer rewrites its input completely, and on the way back the gradient has to pass through every one of those rewrites to reach the first layers. The deeper the stack, the harder that trip becomes. In the next chapter we will build the encoder layer around the norms, fill in the MLP, and add the two shortcuts that give the signal a direct road through all twelve layers.
+
+---
