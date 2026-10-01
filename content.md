@@ -1178,6 +1178,7 @@ Hugging Face also adds a CLS token, so its first norm sees 197 tokens, not 196. 
 # VisionConfig and VisionEmbeddings are the classes you wrote in the last chapter.
 # If they are wrong, the "same with or without CLS" check below prints False.
 import numpy as np
+import matplotlib.pyplot as plt
 from PIL import Image
 from transformers import ViTModel
 
