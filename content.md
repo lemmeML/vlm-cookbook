@@ -881,6 +881,7 @@ Our vision language model skips that squeeze. It keeps every patch vector that c
 We now have 196 vectors. Each one knows what its patch looks like and where it sits. But each patch still knows nothing about any _other_ patch. The ear does not know there is a snout next to it. The encoder layers ahead will fix that by mixing the patches, and we are about to stack twelve of them.
 
 ![ch2-so-far](fig/ch2-so-far.svg)
+
 The moment we stack that many layers, a new problem appears. The numbers flowing through them can drift in scale from layer to layer and from batch to batch, and training starts to wobble. So before we build these layers, we need a way to keep the numbers steady.
 
 ---
@@ -1286,6 +1287,8 @@ The language model also normalizes before its sublayers, but with a slimmer cous
 Notice what the norm does not do. Like the patch embedding, it works on each token alone. It reads one token's 768 numbers and nothing else, which is exactly why the CLS token could be dropped without changing anything. So after the norm the ear still knows nothing about the snout. The norm only makes sure that, when the patches finally start to talk, they all speak at the same volume. The talking itself is attention's job.
 
 ![ch3-so-far](fig/ch3-so-far.svg)
+
+
 We now have the piece that keeps every layer's input steady. But steady inputs are not enough to make a deep stack train well. Every layer rewrites its input completely, and on the way back the gradient has to pass through every one of those rewrites to reach the first layers. The deeper the stack, the harder that trip becomes. In the next chapter we will build the encoder layer around the norms, fill in the MLP, and add the two shortcuts that give the signal a direct road through all twelve layers.
 
 ---
