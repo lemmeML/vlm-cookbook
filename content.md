@@ -935,9 +935,9 @@ Every layer's weights are tuned for inputs of a certain size, but that size keep
 
 ![covariate shift](fig/ch3-covariate-shift.svg)
 
-A layer's input keeps drifting because the layers before it keep changing during training. This drift is called **internal covariate shift**, this term comes from the 2015 paper [Batch Normalization](https://arxiv.org/abs/1502.03167).
+A layer's input keeps drifting because the layers before it keep changing during training. This drift is called **internal covariate shift**, this term comes from the 2015 paper on [Batch Normalization](https://arxiv.org/abs/1502.03167).
 
-Researchers still debate how much of the story this drift explains. A later study ([How Does Batch Normalization Help Optimization?](https://arxiv.org/abs/1805.11604)) found that normalization still improves training even when this drift is deliberately put back in. Its authors argued that the main benefit is making the loss change more smoothly as the weights move, which lets the optimizer take larger steps without destabilizing training. Both explanations point to the same practical remedy: keep the numbers entering each layer at a relatively steady scale.
+Researchers still debate how much of the story this drift explains. A later study [(How Does Batch Normalization Help Optimization?)](https://arxiv.org/abs/1805.11604) found that normalization still improves training even when this drift is deliberately put back in. Its authors argued that the main benefit is making the loss change more smoothly as the weights move, which lets the optimizer take larger steps without destabilizing training. Both explanations point to the same practical remedy: keep the numbers entering each layer at a relatively steady scale.
 
 ### Twelve layers make it worse
 
@@ -988,9 +988,9 @@ gain 0.8: spread after 12 layers = 0.0694
 gain 1.2: spread after 12 layers = 8.8254
 ```
 
-The two spreads, 0.0694 and 8.8254, land right on our predictions of about 0.069 and 8.9. The input was the same and only the weights differed, yet after twelve layers one stack whispers and the other shouts.
+This confirms our hypothesis that after twelve layers one stack other shouts and the other one whispers.
 
-But there is a problem. Every layer in a real network sits somewhere between these two stacks, and training moves it around all the time. So the layer above can never know what size of numbers is coming. To fix this, we force the numbers entering every layer back to one fixed size, no matter what the layers below did. To do that we first need a way to measure "size".
+But there is a problem. Every layer in a real network is somewhere between these two stacks, and training keeps moving it. So the next layer can never know what size of numbers is coming. To fix this, we force the numbers entering every layer back to one fixed size, no matter what the earlier layers did. To do that, we first need a way to measure "size".
 
 ### Mean and spread
 
