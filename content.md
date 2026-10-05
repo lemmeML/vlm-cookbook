@@ -917,7 +917,7 @@ $$y = 9 + 1 = 10$$
 
 The size of the output and the size of the gradient follows the size of the input.
 
-Training works by nudging every weight. To know which way to nudge, backpropagation asks how much $y$ changes when one weight $w_i$ moves a tiny bit. The answer is the input number that the weight multiplies which is $x_i$.
+Training works by nudging every weight. To know which way to nudge, backpropagation asks how much $y$ changes when $w_i$ moves a tiny bit. The answer is the input number that the weight multiplies which is $x_i$.
 
 $$\frac{\partial y}{\partial w_i} = x_i$$
 
