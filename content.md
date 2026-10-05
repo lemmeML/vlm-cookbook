@@ -898,7 +898,7 @@ Think of it as a volume knob. Each layer passes its numbers on to the next one. 
 
 Start with the smallest piece of a layer: one neuron of a linear layer. A neuron is a tiny calculator. It multiplies each input number $x_i$ by its own weight $w_i$, adds the products up (this is the dot product of the input $\mathbf{x}$ with the weight vector $\mathbf{w}$), and then adds a bias $b$
 
-$$y = \mathbf{w} \cdot \mathbf{x} + b$$
+$$y = \mathbf{w}_i \cdot \mathbf{x}_i + b$$
 
 where $y$ is the output of the neuron.
 
