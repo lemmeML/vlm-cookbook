@@ -1046,7 +1046,7 @@ Divide, and you get exactly the same $[-1.34, -0.45, 0.45, 1.34]$. Try $[102, 10
 
 Normalizing throws away two things: the overall size of the numbers, and how far up or down they are shifted. It keeps the pattern: which numbers are bigger than the others, and by how much compared to the rest. Whatever the earlier layers do to the size, the next layer always receives numbers with mean 0 and spread 1.
 
-![normalization](https://claude.ai/chat/fig/ch3-normalization.svg)
+![normalization](fig/ch3-normalization.svg)
 
 In a batch of $B$ images, each with 196 tokens of 768 numbers, which numbers do we average over? There are two choices. We can take one feature and average it across the images in the batch, or take one token and average across its own 768 numbers. The first choice is the older one.
 
@@ -1080,7 +1080,7 @@ What if each token were normalized using only its own numbers?
 
 In our tensor of shape $[B, 196, 768]$, that means each of the $B \times 196$ token vectors is normalized on its own, over its 768 numbers. Those numbers lie along the last axis, so in code the mean is taken with `dim=-1`. A patch of sky and a patch of fur are each rescaled by their own statistics. Your image comes out the same whether it is in a batch of 1 or a batch of 1,000, in training or in inference.
 
-![batch norm vs layer norm](https://claude.ai/chat/fig/ch3-batchnorm-vs-layernorm.svg)
+![batch norm vs layer norm](fig/ch3-batchnorm-vs-layernorm.svg)
 
 This is why Transformers almost always use layer norm, or a close cousin of it, rather than batch norm.
 
@@ -1302,7 +1302,7 @@ normalized               spread from 1.000 to 1.000
 after gamma and beta     spread from 0.094 to 0.148
 ```
 
-![norm-output](https://claude.ai/chat/fig/ch3-norm-output.png)
+![norm-output](fig/ch3-norm-output.png)
 
 Each map puts the spread of every patch at the place where that patch sits in the photo, and all three maps share one color scale. Let's read them one at a time.
 
@@ -1343,7 +1343,7 @@ The language model also normalizes before its sublayers, but with a slimmer cous
 
 Notice what the norm does not do. Like the patch embedding, it works on each token alone. It reads one token's 768 numbers and nothing else, and that is exactly why the CLS token could be dropped without changing anything. So after the norm the ear still knows nothing about the snout. The norm only makes sure that, when the patches finally start to talk, they all speak at the same volume. The talking itself is attention's job.
 
-![ch3-so-far](https://claude.ai/chat/fig/ch3-so-far.svg)
+![ch3-so-far](fig/ch3-so-far.svg)
 
 We now have the piece that keeps every layer's input steady. But steady inputs are not enough to make a deep stack train well. Every layer rewrites its input completely, and on the way back the gradient has to pass through every one of those rewrites to reach the first layers. The deeper the stack, the harder that trip becomes. In the next chapter we will build the encoder layer around the norms, fill in the MLP, and add the two shortcuts that give the signal a direct road through all twelve layers.
 
