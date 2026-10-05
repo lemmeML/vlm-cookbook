@@ -888,21 +888,34 @@ The moment we stack that many layers, a new problem appears. The numbers flowing
 
 # Chapter 3. Keeping the Numbers Steady
 
-At the end of the last chapter we had 196 patch vectors, each 768 numbers long, ready to enter a stack of twelve encoder layers. But there is a problem. As these numbers flow through all those layers, their scale can drift, and training starts to wobble. So before building the layer, we will build the small piece that stops the drift. It is the norm you saw in the ViT figure earlier.
+At the end of the last chapter we had 196 patch vectors, each 768 numbers long, ready to enter a stack of twelve encoder layers. But there is a problem. As these numbers flow through all those layers, their scale can drift, and training starts to wobble. So before building the layer, we will build the small piece that stops the drift: the norm you saw in the ViT figure earlier.
 
 > **Main Idea: Before every layer, shift and rescale each token's vector so its numbers have a mean of 0 and a spread of 1.**
 
-Think of it as a volume knob. Each layer passes its numbers up to the next one. If one layer whispers and the next one shouts, nobody can follow the conversation. The norm turns every voice to the same level before it reaches the next layer.
+Think of it as a volume knob. Each layer passes its numbers on to the next one. If one layer whispers and the next one shouts, nobody can follow the conversation. The norm turns every voice to the same level before it reaches the next layer.
 
 ### Why the numbers drift
 
-Start with the smallest piece of a layer: one neuron of a linear layer. A neuron is a tiny calculator. It multiplies each input number by its own weight, adds the products up (this is the dot product of the input $\mathbf{x}$ with the weight vector $\mathbf{w}$), and then adds a bias $b$
+Start with the smallest piece of a layer: one neuron of a linear layer. A neuron is a tiny calculator. It multiplies each input number $x_i$ by its own weight $w_i$, adds the products up (this is the dot product of the input $\mathbf{x}$ with the weight vector $\mathbf{w}$), and then adds a bias $b$
 
 $$y = \mathbf{w} \cdot \mathbf{x} + b$$
 
-where $y$ is the output of the neuron, a single number.
+where $y$ is the output of the neuron.
 
-Let's try it. Take $\mathbf{w} = [0.5, -1, 2]$, $b = 1$ and the input $\mathbf{x} = [1, 2, 3]$. The dot product is $0.5 - 2 + 6 = 4.5$, so $y = 4.5 + 1 = 5.5$. Now double the input to $[2, 4, 6]$. The dot product doubles to $1 - 4 + 12 = 9$, and $y = 10$. The size of the output follows the size of the input.
+Let's try it. Take $\mathbf{w} = [0.5, -1, 2]$, $b = 1$ and the input $\mathbf{x} = [1, 2, 3]$.
+Then
+
+$$\mathbf{w} \cdot \mathbf{x} = 0.5 - 2 + 6 = 4.5$$
+
+$$y = 4.5 + 1 = 5.5$$
+
+Now double the input to $[2, 4, 6]$. The dot product doubles too
+
+$$\mathbf{w} \cdot \mathbf{x} = 1 - 4 + 12 = 9$$
+
+$$y = 9 + 1 = 10$$
+
+The size of the output follows the size of the input.
 
 The gradient follows it too.
 
