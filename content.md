@@ -1380,3 +1380,713 @@ We now have the piece that keeps every layer's input to the sublayers steady. Bu
 
 ---
 
+# Chapter 4. Stacking Layers without Losing the Signal
+
+At the end of the last chapter we had a norm in front of every sublayer, so each sublayer now receives its input at a steady scale. But steady inputs do not solve everything. Every layer still transforms its input, so what comes out of the last layer is a copy of a copy of a copy. Twelve times over.
+
+On the way back, the gradient has to pass through every one of those transformations before it reaches the early layers. In this chapter we fix this problem in three steps: **we build the MLP, we add the two shortcuts, and then we put everything together into a full encoder**.
+
+> **Main Idea: Every encoder layer keeps its input and only adds corrections to it, so the signal and the gradient both have a direct road through the whole stack.**
+
+Think of the twelve layers as twelve editors working on one page. Without shortcuts, each editor reads the page, throws it away and writes a new one from memory. With shortcuts, the original page is passed along, and each editor only adds notes in the margin.
+
+### What one layer does
+
+You saw the four steps of a layer in the **ViT figure** earlier: a norm, attention, another norm and the MLP. Now we add a shortcut around each sublayer. Each shortcut goes around a norm and its sublayer, then adds the original input back to the result.
+
+![one encoder layer](fig/ch4-encoder-layer.svg)
+
+The layer does two things in order: It normalizes its input, runs attention on it, and adds the result back to the input. After that's done, it normalizes the new sum, runs the MLP on it, and adds the result back to the sum.
+
+The same two steps, written as symbols:
+
+$$\mathbf{h} = \mathbf{x} + \text{Attention}\big(\text{LN}_1(\mathbf{x})\big)$$
+
+$$\mathbf{y} = \mathbf{h} + \text{MLP}\big(\text{LN}_2(\mathbf{h})\big)$$
+
+here, $\mathbf{x}$ is one token's vector as it enters the layer, $\text{LN}_1$ and $\text{LN}_2$ are the two layer norms, $\mathbf{h}$ is the vector halfway through, and $\mathbf{y}$ is what the layer passes on. All three vectors have 768 numbers, so they can be added.
+
+Here is the same idea with one number instead of 768. A token enters with $x = 2$, attention adds $0.5$ and the MLP adds $-0.3$:
+
+$$h = 2 + 0.5 = 2.5$$
+
+$$y = 2.5 - 0.3 = 2.2$$
+
+The layer did not replace the 2. It nudges it.
+
+### Who mixes and who works alone
+
+The two sublayers do very different jobs.
+
+**Attention** is the only part of the layer where tokens share information. It lets the ear patch look at the snout patch and pull in what it needs.
+
+**The MLP** works on each token independently. Patch 5 goes through the MLP without ever seeing patch 90. The same MLP, with the same weights, is applied to each of the 196 vectors one at a time. MLP digests what attention gathered. That is its job: attention brings information into a token, and the MLP works with that information inside the token.
+
+So far, everything we have built works on one token at a time: the patch embedding, the position vector, the norm, and now the MLP. Attention is the only exception.
+
+### The MLP: expand, bend, compress
+
+The MLP does three things to each token:
+
+**Expand.** A linear layer called `fc1` turns the 768 numbers into 3072 numbers.
+**Bend.** A function called GELU bends each of those numbers.
+**Compress.** A second linear layer called `fc2` turns the 3072 numbers back into 768.
+
+("fc" stands for fully connected, an older name for a linear layer. You will also see the MLP called the **feed forward network**.)
+
+$$\text{MLP}(\mathbf{x}) = W_2 \thinspace \text{GELU}\big(W_1\mathbf{x} + \mathbf{b}_1\big) + \mathbf{b}_2$$
+
+here, $W_1$ and $\mathbf{b}_1$ are the weights and biases of `fc1`, $W_2$ and $\mathbf{b}_2$ of `fc2`. 
+$W_1$ has shape $[3072, 768]$ and $W_2$ has shape $[768, 3072]$. (PyTorch writes a linear layer's weight shape as output size first, then input size.)
+
+**Why make the vector bigger in the middle?** It gives the MLP more room to work. You can think of each of the 3072 middle numbers as a small detector that checks the token for one pattern. GELU decides how strongly each detector's answer counts, and `fc2` combines all 3072 answers back into 768 numbers.
+
+Making the middle four times wider is the usual choice: 768 and 3072 in our config, 512 and 2048 in the original Transformer. The real model we load later uses 1152 and 4304. This size was chosen by a study that searched for the best shape for a given compute budget ([Getting ViT in Shape, 2023](https://arxiv.org/abs/2305.13035)).
+
+![expand and compress](fig/ch4-mlp-expand-compress.svg)
+
+### Why the bend matters
+
+Why not skip the bend and keep just the two linear layers? Because two linear layers in a row are no good than a single linear layer.
+
+Let's work an example for this. Say, first layer computes $y = 2x + 1$ and the second computes $z = 3y - 4$. Substituting the equations, we get:
+
+$$z = 3(2x + 1) - 4 = 6x - 1$$
+
+That is just one linear layer, with weight 6 and bias $-1$. At $x = 1$. The two layers give $y = 3$ and then $z = 3 \cdot 3 - 4 = 5$, and the single layer gives $6 \cdot 1 - 1 = 5$. Same answer.
+
+The same thing happens with matrices of any size:
+
+$$W_2\big(W_1\mathbf{x} + \mathbf{b}_1\big) + \mathbf{b}_2 = \big(W_2W_1\big)\mathbf{x} + \big(W_2\mathbf{b}_1 + \mathbf{b}_2\big)$$
+
+The right side is a single matrix $W_2W_1$ of shape $[768, 768]$ plus a single bias. So without a bend, `fc1` and `fc2`, with their 4.7 million weights, can do nothing that one $768 \times 768$ matrix could not. Even a thousand linear layers in a row would still behave like one.
+
+### ReLU and GELU
+
+A function that bends the numbers between two linear layers is called an **activation function**.
+
+The simplest one is **ReLU**, short for Rectified Linear Unit. It keeps positive numbers as they are and turns negative numbers into 0:
+
+$$\text{ReLU}(x) = \max(0, x)$$
+
+So $\text{ReLU}(3) = 3$ and $\text{ReLU}(-3) = 0$.
+
+Put ReLU between our two small layers and they stop collapsing. At $x = 1$, the first layer gives 3, ReLU leaves it unchanged, and the second layer gives 5, the same as the line $6x - 1$. But at $x = -1$, the first layer gives $-1$, ReLU turns it into 0, and the second layer gives $3 \cdot 0 - 4 = -4$. The line $6x - 1$ would have given $-7$. The two now disagree, so the network is no longer a single straight line.
+
+ReLU however has one weakness. For every negative input, its output is exactly 0, and so its gradient also becomes 0. A neuron that receives a negative number learns nothing from that token.
+
+Our model uses a softer bend called **GELU**, short for Gaussian Error Linear Unit ([Hendrycks and Gimpel, 2016](https://arxiv.org/abs/1606.08415)). BERT, GPT-2 and the ViT all use it. GELU behaves like ReLU for large numbers, but bends smoothly near 0 instead of cutting off sharply:
+
+$$\text{GELU}(x) = x \cdot \Phi(x)$$
+
+here, $\Phi(x)$ (capital phi) tells us how likely a random number from the bell curve is to be smaller than $x$. For large positive $x$,  $\Phi(x)$ is close to 1, so GELU leaves $x$ almost unchanged. For a large negative $x$,  $\Phi(x)$  is close to 0, so GELU pushes the output towards 0. Around 0, $\Phi(x)$ is about $0.5$, so GELU keeps roughly half of the input.
+
+Here are a few values side by side:
+
+| $x$  | $\Phi(x)$ | $\text{GELU}(x)$ | $\text{ReLU}(x)$ |     |
+| ---- | --------- | ---------------- | ---------------- | --- |
+| $-1$ | $0.1587$  | $-0.1587$        | $0$              |     |
+| $0$  | $0.5$     | $0$              | $0$              |     |
+| $1$  | $0.8413$  | $0.8413$         | $1$              |     |
+| $2$  | $0.9772$  | $1.9545$         | $2$              |     |
+
+For values far from 0, GELU and ReLU behave similarly. Around 0 however, GELU is gentler: a small negative input produces a small negative output instead of being cut off at 0. GELU reaches a minimum of about $-0.17$, near $x = -0.75$.
+
+There is one practical detail. $\Phi$ does not have a short expression that is convenient to compute, so many models use a $\tanh$ based approximation that is almost identical to GELU. The real model was trained with this tanh version. Its config specifies `gelu_pytorch_tanh`, and PyTorch gives us that version with `F.gelu(x, approximate="tanh")`. We therefore use the same curve the model was trained with.
+
+If you are curious, the approximation is:
+$$0.5 x \left(1 + \tanh\left(\sqrt{2/\pi} \big(x + 0.044715 x^3\big)\right)\right)$$
+here $\tanh$ squashes a number into the range $(-1, 1)$. You will never need to calculate this by hand. PyTorch handles it for us.
+
+![GELU and ReLU](fig/ch4-gelu-vs-relu.svg)
+
+Here is a complete MLP that is small enough to work through by hand: one number goes in, two numbers appear in the middle, and one number comes out. Let `fc1` have weights $[1, -1]$ and `fc2` have weights $[1, 1]$, with no biases. Feed it $x = 1$: `fc1` expands it to $[1, -1]$, GELU bends that to about $[0.841, -0.159]$ and `fc2` adds the two: $0.841 - 0.159 = 0.682$.
+
+Without GELU, `fc2` would simply add $1$ and $-1$ and get 0, and the same cancellation would happen for every input. With GELU in the middle, the two values are changed before they are added, so the output depends on $x$ in a way no single linear layer can reproduce.
+
+Let's check these numbers with PyTorch.
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
+x = torch.linspace(-4, 4, 1001)                      # 1001 points from -4 to 4
+relu = F.relu(x)
+gelu = F.gelu(x)                                     # exact, x times Phi(x)
+gelu_tanh = F.gelu(x, approximate="tanh")            # the version our model uses
+
+print(f"lowest GELU value: {gelu.min():.4f} at x = {x[gelu.argmin()]:.3f}")
+print(f"largest gap between exact and tanh GELU: {(gelu - gelu_tanh).abs().max():.6f}")
+
+plt.plot(x, relu, label="ReLU")
+plt.plot(x, gelu_tanh, label="GELU (tanh)")
+plt.axhline(0, color="grey", lw=0.5); plt.legend(); plt.show()
+```
+
+**Output:**
+
+```text
+lowest GELU value: -0.1700 at x = -0.752
+largest gap between exact and tanh GELU: 0.000473
+```
+
+![relu-gelu-output](fig/ch4-relu-gelu.png)
+
+The lowest GELU value is about $-0.17$ near $x = -0.75$, and the largest gap between the two GELU curves anywhere from $-4$ to $4$ is $0.000473$.
+
+Now let's confirm, at full size, that two linear layers really do collapse into one. We build `fc1` and `fc2`, combine them by hand into a single matrix, and bias, and compare their outputs. Then we put GELU in between them and check the result again.
+
+```python
+torch.manual_seed(0)
+config = VisionConfig()
+fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+x = torch.randn(1, 196, config.hidden_size)                   # [1, 196, 768]
+
+with torch.no_grad():
+    two = fc2(fc1(x))                                         # [1, 196, 3072] -> [1, 196, 768]
+    W = fc2.weight @ fc1.weight                               # [768, 3072] @ [3072, 768] -> [768, 768]
+    b = fc2.weight @ fc1.bias + fc2.bias                      # [768]
+    one = x @ W.T + b                                         # [1, 196, 768], a single linear layer
+    bent = fc2(F.gelu(fc1(x), approximate="tanh"))            # [1, 196, 768], with the bend in the middle
+
+print("two linear layers == one linear layer:", torch.allclose(two, one, atol=1e-4))
+print("with GELU in between, still one layer? ", torch.allclose(bent, one, atol=1e-4))
+```
+
+**Output:**
+
+```text
+two linear layers == one linear layer: True
+with GELU in between, still one layer? False
+```
+
+The first line is `True`: the two linear layers and the merged single layer produce the same 196 vectors. The second should reads `False`: once GELU sits in the middle, a single matrix can longer reproduce the result.
+
+So the bend is what gives the MLP its extra expressive power. Without it, the second linear layer would be unable to add any new capability.
+
+### The MLP module
+
+Here is the module itself. Like the modules we built earlier, it gets its dimensions from the config.
+`fc1` and `fc2` also match the names used by the pretrained checkpoint.
+
+```python
+class VisionMLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+        self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+
+    def forward(self, hidden_states):
+        hidden_states = self.fc1(hidden_states)                     # [B, N, 3072]
+        hidden_states = F.gelu(hidden_states, approximate="tanh")
+        hidden_states = self.fc2(hidden_states)                     # [B, N, 768]
+        return hidden_states
+```
+
+The shapes show exactly what happens. `fc1` changes $[B, N, 768]$ into $[B, N, 3072]$ ($B$ is the batch size and $N$ is the number of tokens). GELU acts on each number independently, so the shape does not change. `fc2` then brings the last dimension back to 768, giving $[B, N, 768]$. Because a linear layer operates only on the last dimension, every token goes through the MLP independently.
+
+**How many weights does the MLP have?** A linear layer has one weight for every input-output pair, plus one bias for each output:
+
+$$\text{parameters} = d_{\text{in}} \cdot d_{\text{out}} + d_{\text{out}}$$
+
+here, $d_{\text{in}}$ and $d_{\text{out}}$ are the input and output sized. A small layer that maps 2 numbers to 3 numbers has $2 \cdot 3 + 3 = 9$ parameters.
+
+For our MLP:
+
+| Layer | Calculation             | Parameters |
+| ----- | ----------------------- | ---------- |
+| `fc1` | $768 \cdot 3072 + 3072$ | 2,362,368  |
+| `fc2` | $3072 \cdot 768 + 768$  | 2,360,064  |
+| MLP   | sum of both             | 4,722,432  |
+
+That is about 3000 times as many parameters as the layer norm from the previous chapter, which has only 1536. In the real model, one MLP holds 9,921,872 parameters, and the 27 MLPs together hold 267,890,544.
+
+Let's run the module and check that each token really goes through it independently. We will change patch 5 while leaving every other patch untouched, and then see which outputs change.
+
+```python
+torch.manual_seed(0)
+mlp = VisionMLP(config)
+x = torch.randn(1, 196, config.hidden_size)                                     # [1, 196, 768]
+with torch.no_grad():
+    y = mlp(x)                                                                  # [1, 196, 768]
+    x2 = x.clone()
+    x2[0, 5] += 1.0                                                             # change patch 5 only
+    y2 = mlp(x2)                                                                # [1, 196, 768]
+
+print(y.shape)
+print("fc1 parameters:", sum(p.numel() for p in mlp.fc1.parameters()))
+print("fc2 parameters:", sum(p.numel() for p in mlp.fc2.parameters()))
+print("MLP parameters:", sum(p.numel() for p in mlp.parameters()))
+changed = (y2 - y).abs().amax(dim=-1)[0]                                        # [196], biggest change per patch
+print("patches whose output changed:", (changed > 0).nonzero().flatten().tolist())
+```
+
+**Output:**
+
+```text
+torch.Size([1, 196, 768])
+fc1 parameters: 2362368
+fc2 parameters: 2360064
+MLP parameters: 4722432
+patches whose output changed: [5]
+```
+
+The output shape is $[1, 196, 768]$, preserving the Transformer contract. The three parameter counts match the table: 2,362,368, 2,360,064 and 4,722,432. And the last line should list only `[5]`.
+
+We changed patch 5, and none of the other 195 outputs changed. The MLP therefore processes each patch independently, inside the MLP, the ear patch never sees the snout
+
+### Residual connections
+
+Now that we have the pieces of a layer, we can return to the problem we identified at the end of the last chapter.
+
+In 2015, a team at Microsoft Research trained two plain CNNs on the same images, one with 20 layers and another with 56. You would expect the deeper network to perform at least as well, but it did worse. Not only on new images but even on the images it was trained on ([Kaiming et al,.](https://arxiv.org/abs/1512.03385)). This was surprising. The 56 layer network, could in principle, copy the 20 layer network and let its extra 36 layers simply pass their input through unchanged. But the training failed to find that solution. For a stack of layers that each transform its input, learning to do nothing turned out to be surprisingly difficult.
+
+The solution was the **Residual Connection**, also called a skip connection. Instead of replacing its input, a block computes a correction and adds it to the input:
+
+$$\mathbf{y} = \mathbf{x} + f(\mathbf{x})$$
+
+here, $\mathbf{x}$ is what enters the block's input, $f(\mathbf{x})$ is the correction computed by the block (for us, a norm followed by attention or by the MLP), and $\mathbf{y}$ is the output. (The name comes from the fact that the block only learns the difference between its output and its input, that difference is called the residual.)
+
+![residual-connection](fig/ch4-residual-connection.svg)
+
+Suppose $x = 2$ and the block computes a correction of $0.1$, the output is $2.1$. If the correction is 0, the output remains 2. This make doing nothing easy to learn. The block only needs to produce zeros. With residual connections, the same team trained a network of 152 layers and won the ImageNet competition of 2015. Residual connections have since become a standard part of deep networks, including Transformers.
+
+That explains the benefits in the forward direction. But shortcuts are just as important when the gradient travels back.
+
+During training, the gradient passes through every layer, and each layer can scale or distort it. Without shortcuts, those effects multiply. Suppose two layers let through factors $0.1$ and $0.2$ let through $0.1 \cdot 0.2 = 0.02$ of the gradient (only 2%). If 12 layers each have a factor of 0.1 the gradient is multiplied by $0.1^{12}$, about one part in a trillion. The early layers would receive almost no useful gradient.
+
+A residual connection changes this, because the input is added directly to the output, the gradient has a direct path through the layer. In our simple one-number example the factor becomes $1+f$.
+For the same two layers: $(1 + 0.1)(1 + 0.2) = 1.32$
+
+Expanding the product gives $1 + 0.1 + 0.2 + 0.02$. Each term represents a different path through the two layers, the $0.1$ goes through the first layer only, the $0.2$  goes through the second layer only, and the $0.02$ goes through both. No matter how small the layers' own factors become, the direct path with weight 1 remains.
+
+Real layers operate on whole vectors, so their factors are matrices rather than single numbers. The idea is the same: the shortcut always gives the gradient a path along which it can pass without being transformed by the sublayer.
+
+Every shortcut doubles the number of possible paths, because the signal can either pass through the sublayer or go around it. Our encoder has 24 shortcuts, two in each of its 12 layers, so there are $2^{24}$ possible paths, or about 16.8 million. One of those paths skips every sublayer entirely. It is the direct path from the input of the stack to its output. A study of residual networks found that during training most of the gradient travels along the shorter paths. This suggests that a deep residual network behave somewhat like many shallower networks working together ([Residual Networks Behave Like Ensembles of Relatively Shallow Networks](https://arxiv.org/abs/1605.06431)).
+
+Our editor analogy gives us the same picture. Without shortcuts, each editor writes a new page from memory, so whatever the first editor wrote has to survive eleven rewrites. With shortcuts, the original page is passed along the entire line, while each editor adds notes in the margin. Feedback from the reader at the end can travel directly back along that original page instead of being passed through eleven separate rewrites.
+
+A shortcut makes "change nothing" the easiest thing for a layer to learn, while also keeping a direct path open for the gradient.
+
+### The encoder layer
+
+Now we have everything to write the layer itself. There is however one problem: the layer needs attention, and we have not built attention yet. For now we will use a stand-in, a class with the same interface that returns zeros. 
+
+Because of the shortcut, a sublayer that returns zeros have no effect: $\mathbf{x} + \mathbf{0} = \mathbf{x}$. The layer can therefore runs normally even though attention in not implemented yet, the MLP does the actual computation and the attention stand-in does nothing.
+
+The stand-in also returns a second value, `None`. The real attention module will return attention weights in that position. We will use those weights later to see which patches attend to which others. When we replace the stand-in with the the real attention, we replace only this class, and the rest of this chapter keeps working.
+
+The attribute names `self_attn`, `layer_norm1`, `mlp` and `layer_norm2` match the names in the pretrained checkpoint.
+
+```python
+class VisionAttention(nn.Module):
+    # stand-in until the next chapter: returns zeros, so only the shortcut and the MLP act
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+    def forward(self, hidden_states):
+        return torch.zeros_like(hidden_states), None   # [B, 196, 768] and no attention weights yet
+
+
+class VisionEncoderLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.embed_dim = config.hidden_size
+        self.self_attn = VisionAttention(config)
+        self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+        self.mlp = VisionMLP(config)
+        self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+
+    def forward(self, hidden_states):
+        residual = hidden_states             # [B, 196, 768], kept for shortcut 1
+        hidden_states = self.layer_norm1(hidden_states)
+        hidden_states, _ = self.self_attn(hidden_states=hidden_states)
+        hidden_states = residual + hidden_states  # shortcut 1, around attention
+
+        residual = hidden_states             # [B, 196, 768], kept for shortcut 2
+        hidden_states = self.layer_norm2(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states # shortcut 2, around the MLP
+        return hidden_states                     # [B, 196, 768]
+```
+
+Read the `forward` method alongside the two equations from the beginning of the chapter. They describe exactly the same computation. `residual` keeps the original input while the norm and sublayer process a copy of it. The original is then added back to the sublayer's output. Notice that the norm only acts on the value entering the sublayer. The copy carried by the shortcut is never normalized.
+
+Let's check that the layer behaves as expected. Because attention currently returns zero, the first half of the layer leaves its input unchanged. The final output should therefore be the original input plus the MLP's correction.
+
+```python
+torch.manual_seed(0)
+layer = VisionEncoderLayer(config)
+x = torch.randn(1, 196, config.hidden_size)           # [1, 196, 768]
+with torch.no_grad():
+    y = layer(x)                                      # [1, 196, 768]
+    correction = layer.mlp(layer.layer_norm2(x))      # [1, 196, 768], what the MLP adds (attention adds 0 for now)
+
+print(y.shape)
+print("output == input + MLP correction:", torch.allclose(y, x + correction, atol=1e-5))
+print(f"spread of input {x.std():.4f}, of the correction {correction.std():.4f}")
+```
+
+**Output:**
+
+```text
+torch.Size([1, 196, 768])
+output == input + MLP correction: True
+spread of input 0.9984, of the correction 0.1991
+```
+
+The shape remains $[1, 196, 768]$, and the second line reads `True`: the output is equal to input plus the MLP's correction. The last line compares the spread of the input, $0.9984$, with the spread of the correction, $0.1991$. The layer keeps the original signal and adds a correction to it.
+
+### Twelve layers with and without shortcuts
+
+Now let's see what the shortcuts do when we stack many layers together. To isolate the effect of the shortcut, we use a simpler block: a norm followed by an MLP, with the shortcut either enabled or disabled. We stack twelve of these blocks and ask two questions.
+
+**Forward: does the input survive?** We compare the input of the with its output, using the cosine similarity from chapter 1. A value close to 1 means the output still points in the same direction as the input. A value close to 0 means the output has lost track of the input.
+
+**Backward: does the gradient survive?** We send a known signal backward through the stack and measure how much of it reaches the input. We call this signal `pull`. The trick is to define the loss as the element-wise product of the output and `pull`, summed over all elements. That makes the gradient at the output exactly equal to `pull`. We can then compare the gradient that arrives at the input with the signal we originally sent.
+
+Both experiments use the same random seed, so the two runs get the same weights, the same input and the same `pull`. Only the shortcut differs.
+
+```python
+class Block(nn.Module):
+    # a norm and an MLP, with or without a shortcut around them
+    def __init__(self, config, shortcut):
+        super().__init__()
+        self.norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+        self.mlp = VisionMLP(config)
+        self.shortcut = shortcut
+
+    def forward(self, x):
+        out = self.mlp(self.norm(x))     # [1, 196, 768]
+        return x + out if self.shortcut else out
+
+
+for shortcut in (False, True):
+    torch.manual_seed(0)                 # same weighs, input and pull in both runs
+    blocks = [Block(config, shortcut) for _ in range(config.num_hidden_layers)]
+    x = torch.randn(1, 196, config.hidden_size, requires_grad=True) # [1, 196, 768]
+    pull = torch.randn(1, 196, config.hidden_size) # [1, 196, 768], the gradient we send down from the top
+
+    h = x
+    for block in blocks:
+        h = block(h)                      # [1, 196, 768]
+    loss = (h * pull).sum()               # its gradient at the top is exactly pull
+    loss.backward()
+
+    kept = F.cosine_similarity(h.flatten(), x.flatten(), dim=0).item() # forward: how much of the input survives
+    arrived = F.cosine_similarity(x.grad.flatten(), pull.flatten(), dim=0).item()   # backward: how much of the pull survives
+    print(f"shortcut {str(shortcut):5s}: input kept {kept:.3f} | pull arrived {arrived:.3f}")
+```
+
+**Output:**
+
+```text
+shortcut False: input kept (cosine) 0.002 | gradient first block 3.55e-02, last block 2.61e-02, ratio 1.360
+shortcut True : input kept (cosine) 0.824 | gradient first block 3.05e-02, last block 2.53e-02, ratio 1.209
+```
+
+Let's look at the two runs.
+
+**Without shortcuts.** `input kept` is (cosine) `0.002`, while the gradient arriving at the first block is `3.55e-02`. After twelve transformations, the output has almost no directional similarity to the original input, and the backward signal reaching the early layers has become relatively weak. The early layers therefore have a harder time receiving a strong learning signal from the loss.
+
+**With shortcuts.** `input kept` is `0.824`, showing that the output remains strongly aligned with the original input. The gradient at the first block is `3.05e-02`, compared with `2.53e-02` at the last block, so the gradient is also preserved much better across the stack. The identity path carries the original signal forward and provides a direct path for the gradient backward.
+
+Why isnt the cosine similarity exactly `1`? Because the MLPs are still doing the real work. Each block adds its own correction in both directions. The shortcut does not prevent the layers from changing the signal; it simply makes those changes additive instead of forcing each layer to replace everything that came before it.
+
+### The residual stream and the final norm
+
+Follow a single token through all twelve layers. It starts as a vector $\mathbf{x}$. The first layer adds two corrections, the second adds two more, and so on. By the end of the stack the original vector has been joined by 24 separate corrections, one from each sublayer.
+
+This main path through the network is called **residual stream**, which we mentioned in the last chapter ([A Mathematical Framework for Transformer Circuits](https://transformer-circuits.pub/2021/framework/index.html)). Every sublayer reads from the stream through its norm, and writes back into it by adding its output. The stream itself is never overwritten.
+
+This also explains the gap we left open in the last chapter: the residual stream itself is never normalized. The norms only normalize the input to the sublayers. The shortcut carry the residual stream around those norms, so the stream itself is free to grow.
+
+We can get an intuition for this with a simple example. When adding two unrelated lists of numbers, their variances roughly add. Suppose the stream starts with variance 1, and every layer adds a correction with variance $0.09$ (corresponding to a spread of 0.3). After twelve layers the variance would be about $1 + 12 \cdot 0.09 = 2.08$, so the spread grows from 1 to about $\sqrt{2.08} \approx 1.44$. 
+
+Real corrections are not independent, so this calculation is only a rough illustration, The important point is that every layer adds something to the stream, so the stream can gradually grow.
+
+That is why the encoder ends with one final norm, `post_layernorm`. It brings the 196 vectors in the residual stream back to a steady scale before they leave the encoder and are passed to the language model.
+
+The last chapter mentioned that original Transformer used post norm, which normalizes the stream after every residual addition. We can now see the downside: the direct path through the stack would have to pass through a norm at every layer, so it would no longer be direct. Post norm stacks can still be trained, but they need more care at the beginning of the training, with a learning rate that starts very small and grows step by step, while pre norm stacks can train without it ([Xiong et al., 2020](https://arxiv.org/abs/2002.04745)). The trade-off is that pre-norm architectures need one additional norm at the end of the stack.
+
+
+![pre norm vs post norm](fig/ch4-pre-vs-post-norm.svg)
+
+### The full vision model
+
+The encoder is a simply a sequence of layers, and the output of one layer becomes the input to the next.
+
+$$\mathbf{x}^{(\ell + 1)} = \text{Layer}_\ell\big(\mathbf{x}^{(\ell)}\big)$$
+
+here, $\ell$ counts the layers from 0 to 11. So the output of the embeddings, $\mathbf{x}^{(0)}$, enters layer 0 and comes out as $\mathbf{x}^{(1)}$, which goes into layer 1, and so on, until $\mathbf{x}^{(12)}$ goes into `post_layernorm`.
+
+Three small classes complete the vision encoder, which we keep in `vision_encoder.py`:
+
+- `VisionEncoder` is the stack of layers.
+- `VisionTransformer` puts the embeddings before the stack and the final norm after it.
+- `VisionModel` wraps everything together again. This extra wrapper is needed because every vision parameter in the checkpoint starts with `vision_model.`, so our model needs an attribute with the same name.
+
+The layers live in an `nn.ModuleList`, a python list that PyTorch knows how to track. Modules inside it are registered as part of the model, so their parameters are counted, moved to the GPU and loaded from the checkpoint. A regular Python list would not provide this behavior.
+
+```python
+class VisionEncoder(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.layers = nn.ModuleList(
+            [VisionEncoderLayer(config) for _ in range(config.num_hidden_layers)]
+        )
+
+    def forward(self, inputs_embeds):
+        hidden_states = inputs_embeds                             # [B, 196, 768]
+        for encoder_layer in self.layers:
+            hidden_states = encoder_layer(hidden_states)          # [B, 196, 768]
+        return hidden_states
+
+
+class VisionTransformer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embeddings = VisionEmbeddings(config)
+        self.encoder = VisionEncoder(config)
+        self.post_layernorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
+
+    def forward(self, pixel_values):
+        hidden_states = self.embeddings(pixel_values)             # [B, 3, 224, 224] -> [B, 196, 768]
+        last_hidden_state = self.encoder(inputs_embeds=hidden_states) # [B, 196, 768]
+        return self.post_layernorm(last_hidden_state)             # [B, 196, 768]
+
+
+class VisionModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.vision_model = VisionTransformer(config) # this name matches the checkpoint
+
+    def forward(self, pixel_values):
+        return self.vision_model(pixel_values=pixel_values)      # [B, 196, 768]
+```
+
+Before running it, let's count its parameters by hand. Every number below comes from pieces we have already counted.
+
+| Part              | Calculation                                        | Parameters     |
+| ----------------- | -------------------------------------------------- | -------------- |
+| Convolution       | $768 \cdot 768$ weights + 768 biases               | 590,592        |
+| Position table    | $196 \cdot 768$                                    | 150,528        |
+| **Embeddings**    | $590{,}592 + 150{,}528$                            | **741,120**    |
+| **One layer**     | two norms $2 \cdot 1536$ + one MLP $4{,}722{,}432$ | **4,725,504**  |
+| **Twelve layers** | $12 \cdot 4{,}725{,}504$                           | **56,706,048** |
+| **Final norm**    | $2 \cdot 768$                                      | **1536**       |
+| **Total**         | $741{,}120 + 56{,}706{,}048 + 1536$                | **57,448,704** |
+
+(Each convolution kernel covers $3 \times 16 \times 16 = 768$ input values, which is why the convolution has $768 \cdot 768$ weights. The stand-in attention still has no parameters.)
+
+```python
+torch.manual_seed(0)
+model = VisionModel(config)
+with torch.no_grad():
+    out = model(torch.randn(1, 3, 224, 224))   # [1, 3, 224, 224] -> [1, 196, 768]
+print(out.shape)
+
+count = lambda m: sum(p.numel() for p in m.parameters())
+vm = model.vision_model
+print("embeddings     ", count(vm.embeddings))
+print("one layer      ", count(vm.encoder.layers[0]))
+print("all 12 layers  ", count(vm.encoder))
+print("post_layernorm ", count(vm.post_layernorm))
+print("total          ", count(model))
+```
+
+**Output:**
+
+```text
+torch.Size([1, 196, 768])
+embeddings      741120
+one layer       4725504
+all 12 layers   56706048
+post_layernorm  1536
+total           57448704
+```
+
+A $[1, 3, 224, 224]$ image goes in and produces an output of the shape $[1, 196, 768]$. The five parameter counts matches our calculations from the table.
+
+
+Most of the parameters are in the **MLPs**. The twelve MLPs hold $12 \cdot 4{,}722{,}432 = 56{,}669{,}184$ out of the total **57,448,704**, about **$99$%** . That will change in the next chapter, when attention adds four more linear layers to every layer, but even then the MLP will hold about two thirds of each layer's parameters.
+
+### Our names against the real checkpoint
+
+Before we load the trained weights, there is one more thing to verify: every parameter name in our model must match the corresponding name in the checkpoint.
+
+The first list comes from the checkpoint. A `.safetensors` file contains a small header describing every tensor inside it, including its name and shape. `get_safetensors_metadata` can read that header without loading the tensor values.
+
+The checkpoint contains more than just the vision encoder. It also contains a text encoder and a small pooling head at the end of the vision model that we do not need here. We therefore keep only the vision tensors and exclude the pooling head.
+
+The second list comes from our own model, built using the real model's dimensions. We build it on PyTorch's `meta` device, which creates tensors with shapes but without allocating storage for their values. This lets us inspect a model of this size without using significant memory.
+
+```python
+import re
+from huggingface_hub import get_safetensors_metadata
+
+meta = get_safetensors_metadata("google/siglip-so400m-patch14-224")
+ckpt = {name: tuple(info.shape)
+        for f in meta.files_metadata.values()
+        for name, info in f.tensors.items()
+        if name.startswith("vision_model.") and not name.startswith("vision_model.head.")}   # the pooling head we skip
+
+real = VisionConfig(hidden_size=1152, intermediate_size=4304, num_hidden_layers=27,
+                    num_attention_heads=16, patch_size=14)
+with torch.device("meta"):
+    ours = VisionModel(real)                                      # shapes only, no numbers
+mine = {k: tuple(v.shape) for k, v in ours.state_dict().items()}
+
+missing = sorted(set(ckpt) - set(mine))
+extra = sorted(set(mine) - set(ckpt))
+wrong = sorted(k for k in set(ckpt) & set(mine) if ckpt[k] != mine[k])
+pattern = lambda keys: sorted({re.sub(r"layers\.\d+\.", "layers.N.", k) for k in keys})   # one line per kind of tensor
+
+print("checkpoint vision tensors:", len(ckpt), "| ours:", len(mine))
+print("missing in ours:", len(missing), pattern(missing))
+print("extra in ours:  ", extra)
+print("wrong shape:    ", wrong)
+```
+
+**Output:**
+
+```text
+checkpoint vision tensors: 437 | ours: 221
+missing in ours: 216 ['vision_model.encoder.layers.N.self_attn.k_proj.bias', 'vision_model.encoder.layers.N.self_attn.k_proj.weight', 'vision_model.encoder.layers.N.self_attn.out_proj.bias', 'vision_model.encoder.layers.N.self_attn.out_proj.weight', 'vision_model.encoder.layers.N.self_attn.q_proj.bias', 'vision_model.encoder.layers.N.self_attn.q_proj.weight', 'vision_model.encoder.layers.N.self_attn.v_proj.bias', 'vision_model.encoder.layers.N.self_attn.v_proj.weight']
+extra in ours: []
+wrong shape: []
+```
+
+Each norm and each linear layer has two tensors: a weight and a bias. A checkpoint layer has 2 norms, 4 attention layers and 2 MLP layers, so $2 \cdot 8 = 16$ tensors, and 27 layers have $27 \cdot 16 = 432$. Add 3 for the embeddings and 2 for `post_layernorm`, and the checkpoint has 437 vision tensors.
+
+Our current layers do not have attention yet, so each one has 8 tensors instead of 16. That gives $27 \cdot 8 = 216$, plus the same 5 tensors outside the layers, for a total of 221.
+
+The 216 missing tensors are the attention weights: a `weight` and a `bias` for each of `self_attn.k_proj`, `q_proj`, `v_proj` and `out_proj`, in all 27 layer. That is exactly what the next chapter adds. The `extra` and `wrong shape` lists are both empty, which meansevery parameter name currently implemented in our model exists in the checkpoint with the expected shape. (The `position_ids` buffer does not appear in either list because it was created with `persistent=False`, so it is not saved as a model parameter, just as we discussed in chapter 2.
+
+Notice that we never typed the real model's dimensions directly into the classes. The values such as `fc1` with shape $[4304,1152]$, the position table with shape $[256,1152]$, and the convolution with shape $[1152,3,14,14]$ all come from the config. The same classes build both our small model and the real model; only the config changes.
+
+### A real photo through a trained encoder
+
+Our implementation still uses random weights, so it cannot tell us much about what a trained encoder does to a real image. The ViT we loaded in the previous two chapters can.
+
+Its layers follow the same structure as ours: a norm, attention, a shortcut, another norm, the MLP, and another shortcut. Some of the parameter names are different, though. Hugging Face calls the two MLP linear layers `intermediate.dense` and `output.dense`, and it calls the second norm `layernorm_after`.
+
+The block below performs two checks.
+
+First, it copies the trained MLP from the ViT's first layer into our `VisionMLP` and compares their outputs. This ViT was trained with the exact GELU, while our class uses the tanh approximation, so we should expect a very small difference rather than exactly zero.
+
+Second, it runs the dog image through all 12 trained layers and records the residual stream after each one. As before, we drop the CLS token. For every layer, we measure two things: the spread of the residual stream and the cosine similarity between the stream before and after the layer. The latter tells us how much of the layer's input remains in its output.
+
+```python
+layer0 = next(m for n, m in vit.named_modules() if re.search(r"(^|\.)layers?\.0$", n))   # layer 0, any version
+inner = list(layer0.named_modules())
+
+fc1_name, fc1_real = next((n, m) for n, m in inner if isinstance(m, nn.Linear)
+                          and (m.in_features, m.out_features) == (768, 3072))           # expand
+fc2_name, fc2_real = next((n, m) for n, m in inner if isinstance(m, nn.Linear)
+                          and (m.in_features, m.out_features) == (3072, 768))           # compress
+lns = [(n, m) for n, m in inner if isinstance(m, nn.LayerNorm)]
+ln2_name, ln2_real = next(((n, m) for n, m in lns if "after" in n), lns[-1])            # the norm before the MLP
+
+print("fc1:", fc1_name, "| fc2:", fc2_name, "| norm:", ln2_name, "| all norms:", [n for n, _ in lns])
+
+mlp_real = VisionMLP(VisionConfig()).eval() # your class, trained weights copied in
+with torch.no_grad():
+    mlp_real.fc1.weight.copy_(fc1_real.weight); mlp_real.fc1.bias.copy_(fc1_real.bias)
+    mlp_real.fc2.weight.copy_(fc2_real.weight); mlp_real.fc2.bias.copy_(fc2_real.bias)
+
+    out = vit(pix, output_hidden_states=True)
+    streams = [h[0, 1:] for h in out.hidden_states] # 13 x [196, 768], before layer 0, then after each layer, CLS dropped
+
+    x_in = ln2_real(streams[0])              # [196, 768], a real normalized input
+    ours = mlp_real(x_in)                    # [196, 768], tanh GELU
+    ref = fc2_real(F.gelu(fc1_real(x_in)))   # [196, 768], exact GELU, as this ViT was trained
+print(f"our MLP vs the trained ViT's MLP, largest difference: {(ours - ref).abs().max():.6f}")
+print(f"typical size of the MLP output:                     {ref.abs().mean():.4f}")
+
+spread = [s.std(dim=-1, unbiased=False).mean().item() for s in streams]          # 13 values
+kept = [F.cosine_similarity(streams[i], streams[i + 1], dim=-1).mean().item()    # 12 values
+        for i in range(len(streams) - 1)]
+final = out.last_hidden_state[0, 1:].std(dim=-1, unbiased=False).mean().item()   # after the final norm
+
+print(f"{'':10s} spread of stream   cosine with previous")
+print(f"{'input':10s} {spread[0]:16.3f}")
+for i in range(len(kept)):
+    print(f"{'layer ' + str(i):10s} {spread[i + 1]:16.3f} {kept[i]:20.3f}")
+print(f"{'final norm':10s} {final:16.3f}")
+
+fig, ax = plt.subplots(1, 2, figsize=(11, 3.5))
+ax[0].plot(range(13), spread, marker="o"); ax[0].axhline(final, ls="--", c="grey", label="after final norm")
+ax[0].set_xlabel("layers done"); ax[0].set_title("spread of the main stream"); ax[0].legend()
+ax[1].plot(range(1, 13), kept, marker="o"); ax[1].set_ylim(0, 1)
+ax[1].set_xlabel("layer"); ax[1].set_title("how much of its input a layer keeps (cosine)")
+plt.tight_layout(); plt.show()
+```
+
+**Output:**
+
+```text
+fc1=mlp.fc1 | fc2=mlp.fc2 | norm=layernorm_after
+all norms=['layernorm_before', 'layernorm_after']
+
+MLP difference: 0.010559
+Typical MLP output size: 0.8526
+
+             spread    cosine_prev
+input        0.768          —
+layer 0      1.114       0.638
+layer 1      1.242       0.787
+layer 2      1.464       0.799
+layer 3      1.668       0.863
+layer 4      2.187       0.855
+layer 5      3.905       0.875
+layer 6      5.298       0.900
+layer 7      5.701       0.899
+layer 8      6.246       0.849
+layer 9      6.973       0.873
+layer 10     8.431       0.818
+layer 11    10.653       0.761
+final norm   0.902
+```
+
+
+**MLP.** The largest difference between VisionMLP and the trained ViT's MLP is **0.010559**, while a typical output value has a magnitude of about **0.8526**. The small difference comes from using the tanh approximation instead of the exact GELU. Apart from that approximation, our MLP is reproducing the trained module correctly.
+
+**The spread column.** The residual stream starts with a spread of **0.768** and reaches **10.653** after the last layer. **The spread grows steadily layer by layer, increasing by roughly 14× overall, although the amount of growth varies from layer to layer.** This is what we would expect from a residual stream that keeps accumulating corrections. Nothing inside the stack forces the stream itself back to a fixed scale. The final norm changes that: the last line, **0.902**, shows the stream after post_layernorm has brought it back to a steady scale.
+
+**The cosine column.** The cosine values range from **0.638** to **0.900**. Every layer therefore keeps a substantial part of the vector it receives. The trained ViT is not throwing away the representation at every layer and starting over. It keeps the existing stream and adds new information to it.
+
+Unlike our stand-in, of course, these layers contain real attention. Some of those added corrections therefore come from other patches.
+
+### Where the new pieces sit
+
+Here is the encoder again, with everything we have built so far, shortcuts included.
+
+```text
+  image              [B, 3, 224, 224]
+  embeddings         [B, 196, 768]
+  layer 0            h = x + self_attn(layer_norm1(x))
+                     y = h + mlp(layer_norm2(h))          [B, 196, 768]
+  layer 1            same                                 [B, 196, 768]
+  ...
+  layer 11           same                                 [B, 196, 768]
+  post_layernorm     [B, 196, 768]
+```
+
+Everything shown here is implemented except: `self_attn` is still the stand-in that returns zeros.
+
+![ch4-so-far](fig/ch4-vision-model-tree.svg)
+
+Our encoder now has its complete skeleton: twelve layers, each with two norms and two shortcuts, an MLP that processes each patch independently, and a final norm on the residual stream.
+
+The editors are in place, and the page can now travel safely from the first editor to the last. But there is still something missing: the editors cannot share information yet. Look at what each patch can see. The norm reads one token at a time. The MLP also reads one token. The ear patch goes through all twelve layers and still knows nothing about the snout, because the only part that lets patches talk currently returns zeros. That is what we will fix in the next chapter. We will replace the stand-in with **real attention**, the part of the layer where every patch finally looks at every other patch.
+
+---
