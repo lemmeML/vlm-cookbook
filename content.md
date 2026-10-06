@@ -1001,7 +1001,7 @@ But there is a problem. A layer in a real network behaves somewhere between thes
 
 ### Mean and spread
 
-Two numbers are enough to describe a list for our purpose: where its center is, and how wide it is. The Greek letters below look fancy, but they are just names for two things you already know, an average and a typical distance from that average.
+For our purposes, these two numbers (mean and spread) are enough, where its center is, and how spread out it is. The Greek letters may look fancy, but they are just names for two things you already know, an average and a distance from that average.
 
 The **mean** is the center of the list, the plain average. For a vector of $D$ numbers
 
@@ -1013,25 +1013,25 @@ The **variance** measures how wide the list is. It is the average squared distan
 
 $$\sigma^2 = \frac{1}{D}\sum_{i=1}^{D} \left(x_i - \mu\right)^2$$
 
-where $\sigma^2$ (sigma squared) is the variance. Squaring makes every distance positive, so numbers below the mean and above it both count. The square root of the variance, $\sigma$, is the **standard deviation**. It brings the result back to the units of the numbers themselves. The standard deviation is the spread that `std()` measured earlier.
+where $\sigma^2$ (sigma squared) is the variance. Squaring makes every distance positive, so both the numbers below and above the mean count. The square root of the variance, $\sigma$, is the **standard deviation**. It brings the result back to the units of the numbers themselves. The standard deviation is the spread that `std()` measured earlier.
 
-Normalizing takes two steps. Subtract the mean from every number, so the new mean is 0. Then divide every number by the standard deviation, so the new spread is 1
+Normalizing takes two steps. First, subtract the mean from every number so that the new mean is 0. Then divide every number by the standard deviation, so the new spread is 1
 
 $$\hat{x}_i = \frac{x_i - \mu}{\sigma}$$
 
-where $\hat{x}_i$ (x hat) is the $i$-th normalized number.
+here $\hat{x}_i$ (x hat) is the $i$-th normalized number.
 
-Try it on $\mathbf{x} = [2, 4, 6, 8]$. First the mean
+Try it on $\mathbf{x} = [2, 4, 6, 8]$. Find the mean:
 
 $$\mu = \frac{2 + 4 + 6 + 8}{4} = 5$$
 
-Subtract it and you get $[-3, -1, 1, 3]$. The squares are $9, 1, 1, 9$, so the variance and the standard deviation are
+Subtract it from every number and you get $[-3, -1, 1, 3]$. The squared distances are $9, 1, 1, 9$, so the variance and the standard deviation are
 
 $$\sigma^2 = \frac{9 + 1 + 1 + 9}{4} = 5$$
 
 $$\sigma = \sqrt{5} \approx 2.236$$
 
-Divide and you get
+Divide by the standard deviation gives
 
 $$\hat{\mathbf{x}} \approx [-1.34, -0.45, 0.45, 1.34]$$
 
@@ -1041,49 +1041,55 @@ $$\frac{20}{5} \cdot \frac{1}{4} = 1$$
 
 so the spread is 1.
 
-Now for the fun part. Try $[20, 40, 60, 80]$, the same vector 10 times bigger. The mean is 50 and the distances are $[-30, -10, 10, 30]$, so
+Now try $[20, 40, 60, 80]$, the same vector scaled up by 10. The mean is 50 and the distances from the mean are $[-30, -10, 10, 30]$, that gives
 
 $$\sigma^2 = \frac{900 + 100 + 100 + 900}{4} = 500$$
 
 $$\sigma = \sqrt{500} \approx 22.36$$
 
-Divide, and you get exactly the same $[-1.34, -0.45, 0.45, 1.34]$. Try $[102, 104, 106, 108]$, the first vector moved up by 100. The mean is 105, the distances are again $[-3, -1, 1, 3]$, and the result is again the same.
+Divide by the standard deviation, and you get exactly the same normalized values as before: $[-1.34, -0.45, 0.45, 1.34]$. For $[102, 104, 106, 108]$, the first vector moved up by 100. The mean is 105, the distances are again $[-3, -1, 1, 3]$, and the result is again the same.
 
-Normalizing throws away two things: the overall size of the numbers, and how far up or down they are shifted. It keeps the pattern: which numbers are bigger than the others, and by how much compared to the rest. Whatever the earlier layers do to the size, the next layer always receives numbers with mean 0 and spread 1.
+Normalization removes two things: the overall size of the numbers and their shared offset. What it keeps is their relative pattern: which numbers are larger or smaller than the others, and how far apart they are relative to the overall spread.
 
 ![normalization](fig/ch3-normalization.svg)
 
-In a batch of $B$ images, each with 196 tokens of 768 numbers, which numbers do we average over? There are two choices. We can take one feature and average it across the images in the batch, or take one token and average across its own 768 numbers. The first choice is the older one.
+In a batch of $B$ images, each with 196 tokens of 768 numbers, which numbers should we average over? There are two choices. We can take one feature and average it across the images in the batch, or we can take one token and average across its own 768 numbers. The first choice is the older one.
 
 ### Batch normalization
 
-The first widely used answer was **Batch Normalization** ([Ioffe and Szegedy, 2015](https://arxiv.org/abs/1502.03167)), usually called batch norm. It was built for CNNs. Picture the batch as a table with one row per example and one column per feature. Batch norm works down each column: for each feature, it computes the mean and variance over all the examples in the batch
+The first widely used answer was **Batch Normalization** ([Ioffe and Szegedy, 2015](https://arxiv.org/abs/1502.03167)), usually called batch norm. It was built for CNNs. Picture the batch as a table with one row per example and one column per feature. Batch norm works down each column: for each feature, it computes the mean and variance across all the examples in the batch:
 
 $$\mu_f = \frac{1}{B}\sum_{b=1}^{B} x_{b,f} \qquad \sigma_f^2 = \frac{1}{B}\sum_{b=1}^{B} \left(x_{b,f} - \mu_f\right)^2$$
 
 where $x_{b,f}$ is feature $f$ of example $b$, and $\mu_f$ and $\sigma_f^2$ are the mean and variance of feature $f$ across the $B$ examples.
 
-It works very well for CNNs trained with big batches. But there is a problem. The normalized value of an example depends on whatever else happens to be in its batch.
+It works very well for CNNs trained with large batches. But there is a catch: the normalized value of one example depends on whatever else happens to be in its batch.
 
-Here is a small example. Put our dog photo in a batch of two images, and say its first feature is 2. If the other image has a 4 in that feature, the mean is 3, the distances are $-1$ and $1$, and the variance is 1, so the dog's feature becomes
+Here is a small example. Put our dog photo in a batch of two images, and suppose its first feature is 2. If the other image has a 4 in that feature, the mean is 3, the distances are $-1$ and $1$, and the variance is 1, the dog's feature becomes:
 
 $$\frac{2 - 3}{1} = -1$$
 
-If the other image has a 0 instead, the mean is 1, the distances are $1$ and $-1$, and the variance is again 1, so the dog's feature becomes
+Now change the other image's feature to 0, the mean becomes 1, the distances are $1$ and $-1$, and the variance is still 1. This time the dog's feature becomes:
 
 $$\frac{2 - 1}{1} = 1$$
 
-Same dog, same number, opposite sign, only because of its neighbor.
+Same dog, same number, opposite sign, only because the other image changed.
 
-Real batches are bigger, so the effect is milder, but it never goes away. The statistics are reliable only for large batches, and they get noisy for small ones. At inference you often have a single image and no batch at all. So during training batch norm keeps running averages of its statistics, and at inference it switches to them. The layer then behaves differently in training and in inference. Text makes it worse still. Sentences have different lengths, so the short ones are filled with padding, filler tokens that make every sentence in the batch equally long. That padding would leak into the averages.
+Real batches are larger, so the effect is milder, but it never completely disappears. The batch statistics also become noisier as the batch gets smaller. At inference, `BatchNorm` normally uses running averages collected during training rather than statistics computed from the current batch. The layer therefore behaves differently during training and inference.
 
-What if each token were normalized using only its own numbers?
+Text(inputs) makes this even worse. Sentences have different lengths, so shorter ones filled with padding, extra tokens added to make every sentence in their batch the same length. Those padding tokens can affect the batch statistics.
+
+What if we normalized each token using its own numbers?
 
 ### Layer normalization
 
-**Layer normalization** ([Ba, Kiros and Hinton, 2016](https://arxiv.org/abs/1607.06450)), or layer norm, fixes this by switching direction. It works along each row: one mean and one variance per token, computed over that token's own $D$ numbers. These are exactly the $\mu$ and $\sigma^2$ from the section on mean and spread. Nothing else in the batch is involved.
+**Layer normalization** ([Ba, Kiros and Hinton, 2016](https://arxiv.org/abs/1607.06450)), or layer norm, fixes this by switching direction.
 
-In our tensor of shape $[B, 196, 768]$, that means each of the $B \times 196$ token vectors is normalized on its own, over its 768 numbers. Those numbers lie along the last axis, so in code the mean is taken with `dim=-1`. A patch of sky and a patch of fur are each rescaled by their own statistics. Your image comes out the same whether it is in a batch of 1 or a batch of 1,000, in training or in inference.
+Instead of working across the batch, it works across the features of each individual token. Each token gets its own mean and variance, computed from its own $D$ numbers. These are exactly the $\mu$ and $\sigma^2$ from the previous section on mean and spread. Nothing else in the batch is involved.
+
+In our tensor of shape $[B, 196, 768]$, that means each of the $B \times 196$ token vectors is normalized independently, using its 768 features. Those features lie along the last axis, so in code the mean is taken with `dim=-1`.
+
+A patch of sky and a patch of fur are each normalized using their own statistics. The result for one image does not change just because we put it in a batch of 1 or a batch of 1000. 
 
 ![batch norm vs layer norm](fig/ch3-batchnorm-vs-layernorm.svg)
 
