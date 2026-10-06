@@ -888,64 +888,67 @@ The moment we stack that many layers, a new problem appears. The numbers flowing
 
 # Chapter 3. Keeping the Numbers Steady
 
-At the end of the last chapter we had 196 patch vectors, each 768 numbers long, ready to enter a stack of twelve encoder layers. But there is a problem. As these numbers flow through all those layers, their scale can drift, and training starts to wobble. So before building the layer, we will build the small piece that stops the drift: the norm you saw in the ViT figure earlier.
+At the end of the last chapter we had 196 patch vectors, each 768 numbers long, ready to pass through a stack of twelve encoder layers. But there is a problem, as those numbers pass through layer after layer, their scale can drift. Some layers may make them larger, others smaller, and training starts to wobble. So before we build the encoder layer, we need to build the small piece that keeps this drift under control: the **norm layer** you saw in the ViT figure in the last chapter.
 
 > **Main Idea: Before every layer, shift and rescale each token's vector so its numbers have a mean of 0 and a spread of 1.**
 
-Think of it as a volume knob. Each layer passes its numbers on to the next one. If one layer whispers and the next one shouts, nobody can follow the conversation. The norm turns every voice to the same level before it reaches the next layer.
+Think of it as a volume knob. Each layer passes its numbers on to the next one. If one layer whispers and the next one shouts, nobody can follow the conversation. The norm brings every voice back to the same level before it reaches the next layer.
 
 ### Why the numbers drift
 
 For a deeper dive into [Normalization] check our previous lessons. 
 
-Start with the smallest piece of a layer: one neuron of a linear layer. A neuron is a tiny calculator. It multiplies each input number $x_i$ by its own weight $w_i$, adds the products up (this is the dot product of the input $\mathbf{x}$ with the weight vector $\mathbf{w}$), and then adds a bias $b$
+Let's start with the smallest piece of a layer: a single neuron in a linear layer. A neuron is a tiny calculator. It multiplies each input number $x_i$ by its corresponding weight $w_i$, adds all those products together (that is the dot product of the input $\mathbf{x}$ with the weight vector $\mathbf{w}$), and then adds bias '$b$'.
 
-$$y = \mathbf{w}_i \cdot \mathbf{x}_i + b$$
+$$y = \mathbf{w} \cdot \mathbf{x} + b$$
 
-where $y$ is the output of the neuron.
+here, $y$ is the output of the neuron.
 
-Let's try it. Take $\mathbf{w} = [0.5, -1, 2]$, $b = 1$ and the input $\mathbf{x} = [1, 2, 3]$.
-Then
+Let's try it. Take $\mathbf{w} = [0.5, -1, 2]$, $b = 1$ and the input $\mathbf{x} = [1, 2, 3]$. Then
 
 $$\mathbf{w} \cdot \mathbf{x} = 0.5 - 2 + 6 = 4.5$$
 
 $$y = 4.5 + 1 = 5.5$$
 
-Now double the input to $[2, 4, 6]$. The dot product doubles too
+Now double the input to $[2, 4, 6]$. The dot product doubles as well:
 
 $$\mathbf{w} \cdot \mathbf{x} = 1 - 4 + 12 = 9$$
 
 $$y = 9 + 1 = 10$$
 
-The size of the output and the size of the gradient follows the size of the input.
+The dot product follows the scale of the input, the bias doesn't chage, so the full output simply does not double. The same idea shows up in the gradient.
 
-Training works by nudging every weight. To know which way to nudge, backpropagation asks how much $y$ changes when $w_i$ changes and that change is equal to $x_i$.
+Training works by nudging the weights. But which way should each weight move? Backpropagation answers that by asking how much the output $y$ changes when weight $w_i$ changes by a tiny amount. The answer is the input value that weight multiplies:
 
 $$\frac{\partial y}{\partial w_i} = x_i$$
 
-A weight's gradient depends directly on the input it receives, double the input and you double the gradient for that weight, which doubles the size of its gradient-descent update.
+Each weight's gradient contains its corresponding input $x_i$ as a factor. Double the input and you double the gradient. The step that gradient-descent step doubles with it:
 
-$$\mathbf{w} \leftarrow \mathbf{w} - \eta \, \frac{\partial \mathcal{L}}{\partial \mathbf{w}}$$
+$$\mathbf{w} \leftarrow \mathbf{w} - \eta , \frac{\partial \mathcal{L}}{\partial \mathbf{w}}$$
 
-where $\eta$ (eta) is the learning rate (a number that sets the size of each step) and $\mathcal{L}$ is the loss.
+where $\eta$ (eta) is the learning rate, which controls the size of each step, and $\mathcal{L}$ is the loss.
 
 ![neuron-input](fig/ch3-neuron-input.svg)
 
-Now place this neuron in a layer somewhere in the middle of the network that is being trained. Its input, being the output of the previous layer, and the previous layer updates its weights after every batch. Follow what happens next. The previous layer's output changes in size, so our neurons output also changes, and so does the loss and the gradients. Our layer's weights then takes a step of a different size.
+Now put this neuron somewhere in the middle of a network that is being trained. Its input comes from the previous layer. After every batch, that layer updates its weights, so the numbers it sends forward changes. Follow what happens, Our neuron's input has changed, which changes its output, and that changes the loss and the gradients that flow back through the network.
 
-Every layer's weights are tuned for inputs of a certain size, but that size keeps changing. Each layer ends up chasing a moving target. The loss jumps around instead of sliding down, and we are forced to use a small learning rate so the jumps don't throw the training off course.
+As a result, the weights in our layer may take a different-sized step from one update to the next.
+
+Each layer's weights are tuned for inputs of a certain size, but that size keeps changing. Each layer ends up chasing a moving target. The loss jumps around instead of sliding down, forcing us to use a smaller learning rate so those jumps don't throw training off course.
 
 ![covariate shift](fig/ch3-covariate-shift.svg)
 
-A layer's input keeps drifting because the layers before it keep changing during training. This drift is called **internal covariate shift**, this term comes from the 2015 paper [Batch Normalization](https://arxiv.org/abs/1502.03167).
+A layer's input keeps changing because the layers before it keep changing during training. This drift is called **Internal Covariate Shift**, a term introduced in the 2015 paper [Batch Normalization](https://arxiv.org/abs/1502.03167).
 
-Researchers still debate how much of the story this drift explains. A later study [(How Does Batch Normalization Help Optimization?)](https://arxiv.org/abs/1805.11604) found that normalization still improves training even when this drift is deliberately put back in. Its authors argued that the main benefit is making the loss change more smoothly as the weights move, which lets the optimizer take larger steps without destabilizing training. Both explanations point to the same practical remedy: keep the numbers entering each layer at a relatively steady scale.
+Researchers still debate how much of the story this drift explains. A later study [(How Does Batch Normalization Help Optimization?)](https://arxiv.org/abs/1805.11604) found that normalization still improves training even when this drift is deliberately reintroduces. Its authors argued that the main benefit is a smoother loss: the loss changes more gently as the weights move, so the optimizer can take larger steps without destabilizing training. Both explanations point to the same practical remedy: keep the numbers entering each layer at a relatively steady scale.
 
-Twelve layers make it worse
+### Twelve layers make it worse
 
 A drift inside one layer is bad. A stack of layers multiplies it.
 
-Here is why. Look at how spread out the numbers of a vector are. Every layer multiplies that spread by some factor, a bit more than 1 or a bit less, depending on its weights. Nothing forces that factor to be exactly 1, and training keeps changing it. Now stack twelve layers. A factor of $1.2$ per layer becomes
+Here's why. Think about how spread out the numbers in a vector are. Every layer changes that spread by some factor, perhaps a little more than 1 or a little less, depending on its weights. Nothing forces that factor to be exactly 1, and training keeps changing it.
+
+Now stack twelve layers. A factor of $1.2$ per layer becomes
 
 $$1.2^{12} \approx 8.9$$
 
@@ -953,11 +956,13 @@ and a factor of $0.8$ per layer becomes
 
 $$0.8^{12} \approx 0.069$$
 
-A 20 percent change per layer sounds harmless, yet after twelve layers it turns into numbers almost 9 times too big, or about 15 times too small. The real model we load later has 27 layers. There, the same factors give about $137$ and about $0.0024$.
+A 20 percent change per layer sounds harmless, yet after twelve layers it produces numbers almost 9 times larger, or about 15 times smaller. The real model we load later has 27 layers. There, the same factors give about $137$ and about $0.0024$.
 
-Let's watch this happen. We build two stacks of twelve linear layers and send a random sequence of 196 tokens through each. In the first stack, every layer multiplies the spread by about 0.8. In the second, every layer multiplies it by about 1.2. `std()` measures the spread.
+This is a deliberately simplified picture: a real transformer layer does much more than multiply the spread by a fixed number. The example isolates one failure mode so we can see why controlling scale matters.
 
-(The weights are random numbers, and `nn.init.normal_` sets how big they are, using a spread of $\text{gain} / \sqrt{768}$. Each output number is a sum of 768 products, and weights of that size make the sum come out about `gain` times as spread out as the input. So `gain` is the knob that makes a layer shrink or grow its input.)
+Let's watch this happen. We build two stacks of twelve linear layers and send a random sequence of 196 tokens through each. In the first stack, every layer multiplies the spread by about 0.8. In the second, every layer multiplies it by about 1.2. Function`std()` measures the spread.
+
+(The weights are random numbers, and `nn.init.normal_` controls their size by giving them a standard deviation of $\text{gain} / \sqrt{768}$. Each output is a sum of 768 input-weight products. With weights at this scale, the output's standard deviation is roughly `gain` times the input's standard deviation. So `gain` acts like a knob that makes a layer shrink or grow its input.)
 
 ```python
 import torch
@@ -990,9 +995,9 @@ gain 0.8: spread after 12 layers = 0.0694
 gain 1.2: spread after 12 layers = 8.8254
 ```
 
-The two spreads, 0.0694 and 8.8254, land right on our predictions of about 0.069 and 8.9. The input was the same and only the weights differed, yet after twelve layers one stack whispers and the other shouts.
+As we can see, after twelve layers one stack whispers and the other shouts.
 
-But there is a problem. A layer in a real network behaves somewhere between these two stacks, and training keeps moving it. So the next layer can never know what size of numbers is coming. To fix this, we force the numbers entering every layer back to one fixed size, no matter what the earlier layers did. To do that, we first need a way to measure "size".
+But there is a problem. A layer in a real network behaves somewhere between these two extremes, and training keeps moving it. So the next layer can never know exactly what size of numbers is coming in. To fix this, we force the numbers entering every layer to be of a fixed size, no matter what the earlier layers did and to do that, we first need a way to measure "size".
 
 ### Mean and spread
 
