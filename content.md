@@ -523,6 +523,7 @@ True
 (`flatten(2).transpose(1, 2)` on the first line turns the conv's grid into a list of 196 vectors so the two results can be compared. We explain it properly later in the chapter.)
 
 ![convolution is linear](fig/ch2-conv-is-linear.svg)
+
 The code below splits our dog image into 196 patches from earlier and shows them as sequence and the matrix form.
 
 ```python
