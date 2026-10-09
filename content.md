@@ -1423,6 +1423,8 @@ The two sublayers do very different jobs.
 
 **The MLP** works on each token independently. Patch 5 goes through the MLP without ever seeing patch 90. The same MLP, with the same weights, is applied to each of the 196 vectors one at a time. MLP digests what attention gathered. That is its job: attention brings information into a token, and the MLP works with that information inside the token.
 
+The same division of labor appears in standard LLMs, attention gathers information from other tokens while MLP processes each token independently. The key difference is that ViT usually lets every patch attend to every other path, where as decoder-only LLM restricts each token to itself and earlier tokens.
+
 So far, everything we have built works on one token at a time: the patch embedding, the position vector, the norm, and now the MLP. Attention is the only exception.
 
 ### The MLP: expand, bend, compress
