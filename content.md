@@ -1446,6 +1446,8 @@ $W_1$ has shape $[3072, 768]$ and $W_2$ has shape $[768, 3072]$. (PyTorch writes
 
 Making the middle four times wider is the usual choice: 768 and 3072 in our config, 512 and 2048 in the original Transformer. The real model we load later uses 1152 and 4304. This size was chosen by a study that searched for the best shape for a given compute budget ([Getting ViT in Shape, 2023](https://arxiv.org/abs/2305.13035)).
 
+LLMs use the same expand-and-compress pattern, although many modern models replace GELU with gated activations such as SwiGLU (Attention gathers context and the MLP transforms it withing each token).
+
 ![expand and compress](fig/ch4-mlp-expand-compress.svg)
 
 ### Why the bend matters
