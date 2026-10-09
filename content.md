@@ -1466,6 +1466,8 @@ $$W_2\big(W_1\mathbf{x} + \mathbf{b}_1\big) + \mathbf{b}_2 = \big(W_2W_1\big)\ma
 
 The right side is a single matrix $W_2W_1$ of shape $[768, 768]$ plus a single bias. So without a bend, `fc1` and `fc2`, with their 4.7 million weights, can do nothing that one $768 \times 768$ matrix could not. Even a thousand linear layers in a row would still behave like one.
 
+Without nonlinearities, stacking linear layers would still amount to a single linear transformation, limiting what the model could learn. This is why activation functions are essential in both vision and language models.
+
 ### ReLU and GELU
 
 A function that bends the numbers between two linear layers is called an **activation function**.
@@ -1817,6 +1819,8 @@ Real corrections are not independent, so this calculation is only a rough illust
 
 That is why the encoder ends with one final norm, `post_layernorm`. It brings the 196 vectors in the residual stream back to a steady scale before they leave the encoder and are passed to the language model.
 
+Many decoder-only LLMs use the same pre-norm arrangements, often followed by a final layer norm before the output projection produces next-token scores. The normalization scheme varies by model just as it does across vision transformers.
+
 The last chapter mentioned that original Transformer used post norm, which normalizes the stream after every residual addition. We can now see the downside: the direct path through the stack would have to pass through a norm at every layer, so it would no longer be direct. Post norm stacks can still be trained, but they need more care at the beginning of the training, with a learning rate that starts very small and grows step by step, while pre norm stacks can train without it ([Xiong et al., 2020](https://arxiv.org/abs/2002.04745)). The trade-off is that pre-norm architectures need one additional norm at the end of the stack.
 
 
@@ -1890,7 +1894,9 @@ Before running it, let's count its parameters by hand. Every number below comes 
 | **Final norm**    | $2 \cdot 768$                                      | **1536**       |
 | **Total**         | $741{,}120 + 56{,}706{,}048 + 1536$                | **57,448,704** |
 
-(Each convolution kernel covers $3 \times 16 \times 16 = 768$ input values, which is why the convolution has $768 \cdot 768$ weights. The stand-in attention still has no parameters.)
+Each convolution kernel covers $3 \times 16 \times 16 = 768$ input values, which is why the convolution has $768 \cdot 768$ weights. The stand-in attention still has no parameters.
+
+Structurally, this encoder resembles the repeating blocks of a standard LLM as both combine attention, MLP, norm and skip connections. The main difference are the input tokens, attention masking and what the model does with its final representations. Our Vision Encoder produces a vector for each image patch, capturing visual information from the across the image, which the language model can use to understand the image. A standard LLM (decoder-only) uses its final token representations to produce scores for the possible next tokens.
 
 ```python
 torch.manual_seed(0)
