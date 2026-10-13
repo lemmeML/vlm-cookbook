@@ -885,6 +885,8 @@ We now have 196 vectors. Each one knows what its patch looks like and where it s
 
 The moment we stack that many layers, a new problem appears. The numbers flowing through them can drift in scale from layer to layer and from batch to batch, and training starts to wobble. So before we build these layers, we need a way to keep the numbers steady.
 
+_Complete Chapter 2 Code: [Colab Notebook](https://colab.research.google.com/drive/11yBDXMkF1JCtOgpYVL2HCsUs5D1sUNJf?usp=sharing)_
+
 ---
 # Chapter 3. Keeping the Numbers Steady
 
@@ -1378,6 +1380,8 @@ Notice what the norm does not do. Like the patch embedding, it works on each tok
 ![ch3-so-far](fig/ch3-so-far.svg)
 
 We now have the piece that keeps every layer's input to the sublayers steady. But steady inputs are not enough to make a deep stack train well. Every layer still transforms the representation, and on the way back the gradient has to pass through those transformations to reach the earlier layers. The deeper the stack, the more important it becomes to give the signal a direct path through the network. In the next chapter we will build the encoder layer around the norms, fill in the MLP, and add the two shortcuts that give the signal a direct road through all twelve layers.
+
+_Complete Chapter 3 Code: [Colab Notebook](https://colab.research.google.com/drive/1bMzwpzutjxpOLLUykRZktsIGCQ96ZrrP?usp=sharing)_
 
 ---
 
@@ -2099,5 +2103,7 @@ Everything shown here is implemented except: `self_attn` is still the stand-in t
 Our encoder now has its complete skeleton: twelve layers, each with two norms and two shortcuts, an MLP that processes each patch independently, and a final norm on the residual stream.
 
 The editors are in place, and the page can now travel safely from the first editor to the last. But there is still something missing: the editors cannot share information yet. Look at what each patch can see. The norm reads one token at a time. The MLP also reads one token. The ear patch goes through all twelve layers and still knows nothing about the snout, because the only part that lets patches talk currently returns zeros. That is what we will fix in the next chapter. We will replace the stand-in with **real attention**, the part of the layer where every patch finally looks at every other patch.
+
+_Complete Chapter 4 Code: [Colab Notebook](https://colab.research.google.com/drive/1RHEBLwaABQ-_HwI3vak5--NNSmvjt6J2?usp=sharing)_
 
 ---
