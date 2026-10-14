@@ -2147,8 +2147,7 @@ To answer a question, a person reads everyone's name tags and decides whose info
 
 #### Encoder, now with real attention 
 
-
-![](fig/ch5-vision-model-tree.svg)
+![encoder-now](fig/ch5-vision-model-tree.svg)
 
 The hatched stand-in attention from previous chapter now becomes the real `self_attn`. 
 Inside it we have four linear layers: `q_proj`, `k_proj`, `v_proj` and `out_proj`, where this module splits its work across 12 attention heads.
