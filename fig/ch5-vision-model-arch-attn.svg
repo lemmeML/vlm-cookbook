@@ -1,0 +1,178 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1110" height="800" viewBox="0 0 1110 800" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#7a828a"/></marker></defs>
+<path d="M435,34 L1085,34" fill="none" stroke="#7a828a" stroke-width="1.4"/>
+<path d="M435,58 L1085,58" fill="none" stroke="#7a828a" stroke-width="0.7"/>
+<path d="M435,102 L1085,102" fill="none" stroke="#7a828a" stroke-width="1.4"/>
+<text x="440" y="51" font-size="11.5" text-anchor="start" font-weight="bold" font-style="normal" fill="#7a828a">Configuration</text>
+<text x="690" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">P</text>
+<text x="748" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">N</text>
+<text x="806" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">D</text>
+<text x="864" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">H</text>
+<text x="922" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan></text>
+<text x="980" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">L</text>
+<text x="1045" y="51" font-size="12" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">D<tspan dy='3' font-size='0.72em'>mlp</tspan><tspan dy='-3'>&#8203;</tspan></text>
+<text x="440" y="75" font-size="11.5" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a">Base (shape tests in this chapter)</text>
+<text x="690" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">16</text>
+<text x="748" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">196</text>
+<text x="806" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">768</text>
+<text x="864" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">12</text>
+<text x="922" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">64</text>
+<text x="980" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">12</text>
+<text x="1045" y="75" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">3072</text>
+<text x="440" y="94" font-size="11.5" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a">SigLIP so400m-patch14-224 (real weights)</text>
+<text x="690" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">14</text>
+<text x="748" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">256</text>
+<text x="806" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">1152</text>
+<text x="864" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">16</text>
+<text x="922" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">72</text>
+<text x="980" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">27</text>
+<text x="1045" y="94" font-size="11.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">4304</text>
+<text x="440" y="120" font-size="10.5" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a">B = batch size, N = (224 / P)² patches, d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan> = D / H. Bracketed labels are tensor shapes.</text>
+<rect x="190" y="655" width="60" height="60" fill="#e3eaf4" stroke="#333" stroke-width="1.2"/>
+<path d="M205,655 L205,715" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<path d="M190,670 L250,670" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<path d="M220,655 L220,715" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<path d="M190,685 L250,685" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<path d="M235,655 L235,715" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<path d="M190,700 L250,700" fill="none" stroke="#7a8aa0" stroke-width="0.8"/>
+<text x="262" y="681" font-size="11" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">pixel_values</text>
+<text x="262" y="696" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, 3, 224, 224]</text>
+<path d="M220,655 L220,622" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="130" y="580" width="180" height="40" rx="5" fill="#f6d5d7" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="597.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Patch Embedding</text>
+<text x="220.0" y="611.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">Conv2d (kernel = stride = P), flatten</text>
+<path d="M220,580 L220,557" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="28" y="530" width="132" height="30" rx="5" fill="#f6d5d7" stroke="#333" stroke-width="1.2"/>
+<text x="94.0" y="549.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Position Embedding</text>
+<path d="M160,545 L208,545" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<circle cx="220" cy="545" r="10" fill="#fff" stroke="#333" stroke-width="1.3"/>
+<path d="M213,545 L227,545" fill="none" stroke="#333" stroke-width="1.3"/>
+<path d="M220,538 L220,552" fill="none" stroke="#333" stroke-width="1.3"/>
+<text x="236" y="549" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, N, D]</text>
+<rect x="95" y="160" width="255" height="355" rx="10" fill="rgba(128,128,128,0.10)" stroke="#7a828a" stroke-width="1.2"/>
+<text x="103" y="176" font-size="10" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">VisionEncoderLayer</text>
+<text x="70" y="345" font-size="17" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">L ×</text>
+<path d="M220,534 L220,482" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<circle cx="220" cy="500" r="2.8" fill="#7a828a"/>
+<path d="M220,500 L330,500 L330,360 L232,360" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="145" y="455" width="150" height="25" rx="5" fill="#fff2cc" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="471.5" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">LayerNorm</text>
+<path d="M220,455 L220,437" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="145" y="395" width="150" height="40" rx="5" fill="#fce5cd" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="412.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Multi-Head</text>
+<text x="220.0" y="426.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Attention</text>
+<path d="M220,395 L220,372" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<circle cx="220" cy="360" r="10" fill="#fff" stroke="#333" stroke-width="1.3"/>
+<path d="M213,360 L227,360" fill="none" stroke="#333" stroke-width="1.3"/>
+<path d="M220,353 L220,367" fill="none" stroke="#333" stroke-width="1.3"/>
+<path d="M220,349 L220,327" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<circle cx="220" cy="340" r="2.8" fill="#7a828a"/>
+<path d="M220,340 L330,340 L330,205 L232,205" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="145" y="300" width="150" height="25" rx="5" fill="#fff2cc" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="316.5" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">LayerNorm</text>
+<path d="M220,300 L220,282" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="145" y="240" width="150" height="40" rx="5" fill="#cfe2f3" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="257.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">MLP</text>
+<text x="220.0" y="271.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">Linear → GELU (tanh) → Linear</text>
+<path d="M220,240 L220,217" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<circle cx="220" cy="205" r="10" fill="#fff" stroke="#333" stroke-width="1.3"/>
+<path d="M213,205 L227,205" fill="none" stroke="#333" stroke-width="1.3"/>
+<path d="M220,198 L220,212" fill="none" stroke="#333" stroke-width="1.3"/>
+<path d="M220,194 L220,137" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="145" y="110" width="150" height="25" rx="5" fill="#fff2cc" stroke="#333" stroke-width="1.2"/>
+<text x="220.0" y="126.5" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Post LayerNorm</text>
+<path d="M220,110 L220,80" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="220" y="72" font-size="11" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">last_hidden_state</text>
+<text x="220" y="56" font-size="10.5" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">[B, N, D]</text>
+<path d="M295,395 L420,165" fill="none" stroke="#7a828a" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M295,435 L420,725" fill="none" stroke="#7a828a" stroke-width="1" stroke-dasharray="4 3"/>
+<rect x="420" y="165" width="350" height="560" rx="10" fill="none" stroke="#7a828a" stroke-width="1.1" stroke-dasharray="5 4"/>
+<text x="432" y="184" font-size="10" text-anchor="start" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">VisionAttention</text>
+<text x="595" y="714" font-size="11" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">hidden_states</text>
+<text x="643" y="714" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, N, D]</text>
+<path d="M595,700 L595,665" fill="none" stroke="#7a828a" stroke-width="1.3"/>
+<path d="M515,665 L675,665" fill="none" stroke="#7a828a" stroke-width="1.3"/>
+<path d="M515,665 L515,642" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="480" y="610" width="70" height="30" rx="5" fill="#ececec" stroke="#333" stroke-width="1.2"/>
+<text x="515.0" y="622.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Linear</text>
+<text x="515.0" y="636.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">q_proj</text>
+<path d="M515,610 L515,571" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M595,665 L595,642" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="560" y="610" width="70" height="30" rx="5" fill="#ececec" stroke="#333" stroke-width="1.2"/>
+<text x="595.0" y="622.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Linear</text>
+<text x="595.0" y="636.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">k_proj</text>
+<path d="M595,610 L595,571" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M675,665 L675,642" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="640" y="610" width="70" height="30" rx="5" fill="#ececec" stroke="#333" stroke-width="1.2"/>
+<text x="675.0" y="622.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Linear</text>
+<text x="675.0" y="636.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">v_proj</text>
+<path d="M675,610 L675,571" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="470" y="537" width="250" height="32" rx="5" fill="#f7f7f7" stroke="#333" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="595.0" y="550.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">split into H heads</text>
+<text x="595.0" y="564.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">view → transpose → [B, H, N, d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan>]</text>
+<path d="M515,537 L515,492" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="507" y="520" font-size="12.5" text-anchor="end" font-weight="normal" font-style="italic" fill="#7a828a">Q</text>
+<path d="M595,537 L595,492" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="587" y="520" font-size="12.5" text-anchor="end" font-weight="normal" font-style="italic" fill="#7a828a">K</text>
+<path d="M675,537 L675,492" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="667" y="520" font-size="12.5" text-anchor="end" font-weight="normal" font-style="italic" fill="#7a828a">V</text>
+<rect x="488" y="432" width="230" height="50" rx="5" fill="#d9d2e9" stroke="#333" stroke-width="1.2"/>
+<rect x="484" y="436" width="230" height="50" rx="5" fill="#d9d2e9" stroke="#333" stroke-width="1.2"/>
+<rect x="480" y="440" width="230" height="50" rx="5" fill="#d9d2e9" stroke="#333" stroke-width="1.2"/>
+<text x="595.0" y="462.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Scaled Dot-Product</text>
+<text x="595.0" y="476.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Attention</text>
+<text x="732" y="445" font-size="15" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">H</text>
+<path d="M520,440 L520,398" fill="none" stroke="#7a828a" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+<text x="512" y="405" font-size="11" text-anchor="end" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">attn</text>
+<text x="512" y="419" font-size="10.5" text-anchor="end" font-weight="normal" font-style="italic" fill="#7a828a">[B, H, N, N]</text>
+<path d="M595,432 L595,362" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="603" y="405" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, H, N, d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan>]</text>
+<rect x="515" y="330" width="160" height="30" rx="5" fill="#fff2cc" stroke="#333" stroke-width="1.2"/>
+<text x="595.0" y="342.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Concat heads</text>
+<text x="595.0" y="356.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">transpose → reshape</text>
+<path d="M595,330 L595,302" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="603" y="320" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, N, D]</text>
+<rect x="545" y="270" width="100" height="30" rx="5" fill="#ececec" stroke="#333" stroke-width="1.2"/>
+<text x="595.0" y="282.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Linear</text>
+<text x="595.0" y="296.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">out_proj</text>
+<path d="M595,270 L595,222" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="595" y="212" font-size="11" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a" font-family="Menlo, Consolas, monospace">output</text>
+<text x="621" y="212" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, N, D]</text>
+<path d="M718,432 L800,265" fill="none" stroke="#7a828a" stroke-width="1" stroke-dasharray="4 3"/>
+<path d="M710,490 L800,725" fill="none" stroke="#7a828a" stroke-width="1" stroke-dasharray="4 3"/>
+<rect x="800" y="265" width="290" height="460" rx="10" fill="none" stroke="#7a828a" stroke-width="1.1" stroke-dasharray="5 4"/>
+<text x="885" y="712" font-size="14" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">Q</text>
+<text x="935" y="712" font-size="14" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">K</text>
+<text x="1045" y="712" font-size="14" text-anchor="middle" font-weight="normal" font-style="italic" fill="#7a828a">V</text>
+<path d="M885,698 L885,647" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M935,698 L935,647" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="860" y="615" width="100" height="30" rx="5" fill="#d9d2e9" stroke="#333" stroke-width="1.2"/>
+<text x="910.0" y="634.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">MatMul</text>
+<text x="968" y="634" font-size="11.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">QK<tspan dy="-5" font-size="0.7em">T</tspan><tspan dy="5">&#8203;</tspan></text>
+<path d="M910,615 L910,592" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="918" y="607" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, H, N, N]</text>
+<rect x="860" y="560" width="100" height="30" rx="5" fill="#fff2cc" stroke="#333" stroke-width="1.2"/>
+<text x="910.0" y="572.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Scale</text>
+<text x="910.0" y="586.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">× 1 / √d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan></text>
+<path d="M910,560 L910,537" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="860" y="505" width="100" height="30" rx="5" fill="#d9ead3" stroke="#333" stroke-width="1.2"/>
+<text x="910.0" y="517.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">SoftMax</text>
+<text x="910.0" y="531.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">dim = −1, float32</text>
+<path d="M910,505 L910,482" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="860" y="450" width="100" height="30" rx="5" fill="#f7f7f7" stroke="#333" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="910.0" y="462.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">Dropout</text>
+<text x="910.0" y="476.0" font-size="10" text-anchor="middle" font-weight="normal" font-style="normal" fill="#3c3c3c">p = 0</text>
+<path d="M910,450 L910,367" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<path d="M1045,698 L1045,367" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<rect x="870" y="335" width="200" height="30" rx="5" fill="#d9d2e9" stroke="#333" stroke-width="1.2"/>
+<text x="970.0" y="354.0" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#1a1a1a">MatMul</text>
+<path d="M970,335 L970,302" fill="none" stroke="#7a828a" stroke-width="1.5" marker-end="url(#arr)"/>
+<text x="978" y="320" font-size="10.5" text-anchor="start" font-weight="normal" font-style="italic" fill="#7a828a">[B, H, N, d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan>]</text>
+<text x="970" y="290" font-size="10.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">per-head output</text>
+<text x="220" y="758" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a"><tspan font-weight="bold">(a)</tspan> Vision encoder</text>
+<text x="220" y="774" font-size="10.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">pre-norm, no [CLS] token</text>
+<text x="595" y="758" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a"><tspan font-weight="bold">(b)</tspan> Multi-head attention</text>
+<text x="595" y="774" font-size="10.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">H heads run in parallel on d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan>-dim slices</text>
+<text x="945" y="758" font-size="12.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a"><tspan font-weight="bold">(c)</tspan> Scaled dot-product attention</text>
+<text x="945" y="774" font-size="10.5" text-anchor="middle" font-weight="normal" font-style="normal" fill="#7a828a">softmax(QK<tspan dy="-5" font-size="0.7em">T</tspan><tspan dy="5">&#8203;</tspan> / √d<tspan dy="3" font-size="0.72em">h</tspan><tspan dy="-3">&#8203;</tspan>) V</text>
+</svg>
