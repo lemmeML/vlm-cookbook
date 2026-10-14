@@ -2994,7 +2994,7 @@ layer 13: 4 sink patches, they take 19.0% of patch 117's attention
 layer 26: 7 sink patches, they take 40.3% of patch 117's attention
 ```
 
-![dog attention](ch5-dog-attention.png)
+![dog attention](fig/ch5-dog-attention.png)
 
 **Layer 0.** The output reports the number of sink patches and the percentage of patch 117's attention that goes to them.
 
