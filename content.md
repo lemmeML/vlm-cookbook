@@ -2716,7 +2716,7 @@ An image encoder does not have the same requirement. The patches are parts of an
 
 That is why our encoder does not need a causal attention mask.
 
-### The complete encoder
+### The Complete Encoder
 
 ![vision-model](fig/ch5-vision-model-arch-attn.svg)
 
