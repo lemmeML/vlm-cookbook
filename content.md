@@ -3041,7 +3041,7 @@ Inside every `self_attn` module, the data flows through these shapes:
 
 ![ch5-so-far](fig/ch5-so-far.svg)
 
-There are no placeholders left in this part of the encoder.
+There are no placeholders left in the Encoder now.
 
 The patches can now exchange information through all $27$ layers. Each patch uses its **query** to compare itself with the other patches, assigns weights to their **keys**, and combines their **values**. The attention output then joins the residual stream through the shortcut.
 
