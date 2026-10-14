@@ -2718,6 +2718,8 @@ That is why our encoder does not need a causal attention mask.
 
 ### The complete encoder
 
+![vision-model](ch5-vision-model-arch-attn.svg)
+
 We have now implemented the real attention module. The new class uses the same name as the placeholder, `VisionAttention`.
 
 `VisionEncoderLayer` looks up `VisionAttention` by name whenever it creates a layer. Any model we build from this point onward will therefore use real attention.
