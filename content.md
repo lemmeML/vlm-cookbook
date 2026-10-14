@@ -2107,3 +2107,952 @@ The editors are in place, and the page can now travel safely from the first edit
 _Complete Chapter 4 Code: [Colab Notebook](https://colab.research.google.com/drive/1RHEBLwaABQ-_HwI3vak5--NNSmvjt6J2?usp=sharing)_
 
 ---
+
+# Chapter 5. Making the Patches Talk
+
+At the end of the last chapter our encoder had its complete skeleton: 12 layers, each with two norms, two shortcuts and an MLP, followed by a final norm on the residual stream. But one part was still a placeholder. The `self_attn` module, which could only return zeros, and every patch passed through all twelve layers, knowing nothing about others. Everything we have built so far processes one patch at a time. The patch **embedding**, the **position** vector, the **norm** and the **MLP** never look past their own patch. In this chapter we build the part that lets the patches communicate and share information with each other through something called **"Attention"**.
+
+### Attention Is All You Need
+
+The idea of **attention** first became important in machine translation. In 2014, translation models often compressed an input sentence into a single fixed-length vector. This made it harder to preserve information from long sentences.
+
+[Bahdanau, Cho and Bengio](https://arxiv.org/abs/1409.0473) addressed this problem by allowing the model to look back at every source word while generating each output word.
+
+In 2017, the seminal paper ["Attention Is All You Need"](https://arxiv.org/abs/1706.03762) introduced the the **Transformer**.
+Instead of processing words one at a time, the Transformer used attention to process all tokens in parallel.
+
+The Transformer later became the foundation for models such as **BERT**, **GPT** models, Vision Transformers, CLIP, and the vision language model as well that we are building.
+
+![attention](fig/ch5-attention-idea.svg)
+
+
+Attention is a way to lookup information.
+
+A Python dictionary takes a key and returns the value stored under that exact key. Attention works differently, it compares a **query** with every available **key**, coverts the scores into weights that add up to 1, and uses those weights to combine the corresponding **values**. Better matches receive larger weights and contribute more to the result.
+
+Consider the word "*bank*" in the two sentences: *"we fished from the river bank"*, and "*we saved money at the bank*". In the first sentence the word "*bank*" can draw information from words such as "*river*" and "*fished*". In the second, it can draw information from "*money*" and "*saved*".
+
+The word is the same, but the information it gathers changes with the sentence. This is how "*bank*" gets a different representation depending on its context.
+
+Patches work the same way, through attention the ear patch can gather information from the snout, the eyes, and other parts of the image.
+
+
+> **Main Idea: Each patch compares its query with the keys of all patches, turns the resulting scores into weights that add up to one, and uses those weights to combine their values.**
+
+#### Coming back to our example
+
+Think of the 196 patches as 196 people in one room. Each person has a question card, a name tag showing what they know, and a notebook containing information they can share.
+
+To answer a question, a person reads everyone's name tags and decides whose information is most useful. They then combine notes from the people whose tags best matches their questions.
+
+#### Encoder, now with real attention 
+
+
+![](fig/ch5-vision-model-tree.svg)
+
+The hatched stand-in attention from previous chapter now becomes the real `self_attn`. 
+Inside it we have four linear layers: `q_proj`, `k_proj`, `v_proj` and `out_proj`, where this module splits its work across 12 attention heads.
+
+Everything else in the model stays the same. Each new weight has a name that follows its path through the model tree. For example, the query projection weight is named `vision_model.encoder.layers.0.self_attn.q_proj.weight`.
+
+These four linear layers give each encoder layer all 16 tensors expected by the checkpoint, instead of the 8 we had at the end of the last chapter. By the end of this chapter, we will have built all four layers and checked their names and shapes against our checkpoint. 
+
+### What attention has to do
+
+Let's look at the problem from the ear patch's point of view.
+
+The ear patch contains 768 numbers describing its local image features, such as fur and edges, along with information about its position. But those numbers alone may not tell us that the patch belongs to a dog's ear. To understand that, the patch needs information from other parts of the image. It may need to look at nearby patches or patches much farther away.
+
+*Which patches should it use?*
+
+That depends on the image. In one photo, the snout might be two patches to the right. In another, it might be near the edge. A third photo might not contain a dog at all. We cannot decide in advance which patches matter. Each patch must use the current image to decide where to look and how much information to take from each patch.
+
+Attention does this in three steps. It scores every patch on how useful that patch is to the patch asking question. It convers the scores into weights that add up to 1. And it combines the information from all patches using those weights.
+
+### Query, key and value
+
+Each patch uses three vectors to take part in attention. Each vector has a different role.
+
+- The **query** represent what the patch is looking for. (think of it as the question card)
+- The **key** represents the information a patch makes available for matching. (think of it as the name tag)
+- The **value** contains the information a patch can pass to other patches. (think of it as the notebook)
+
+We create these vectors using three separate linear layers: `q_proj`, `k_proj` and `v_proj`.
+
+Each of these layers takes 768 numbers as inputs and produces 768 numbers as outputs. And all three layers receive the same input: the patch vector after `layer_norm1`.
+
+The equations of these layers are as follows:
+
+$$\mathbf{q}_i = W^{Q}\mathbf{x}_i + \mathbf{b}_Q \qquad \mathbf{k}_i = W^{K}\mathbf{x}_i + \mathbf{b}_K \qquad \mathbf{v}_i = W^{V}\mathbf{x}_i + \mathbf{b}_V$$
+
+Here, $\mathbf{x}_i$ is the vector for patch $i$ after `layer_norm1`.
+The vectors $\mathbf{q}_i$, $\mathbf{k}_i$ and $\mathbf{v}_i$ are its **query**, **key** **and** **value**.
+
+Each weight matrix $W$ has shape $[768, 768]$ and each bias vector $\mathbf{b}$ holds 768 numbers, these are the same kinds of weights and biases we used in the MLP. 
+
+The original Transformer paper writes the three weight matrices as $W^Q$, $W^K$ and $W^V$.
+
+#### Lets work through a small example
+
+Suppose a patch has the input vector $\mathbf{x} = [1, 2]$.
+We use a query weight matrix that keeps the first number and drops the second.
+
+$$W_Q = \begin{pmatrix} 1 & 0 \\ 0 & 0 \end{pmatrix}$$
+
+assume the bias is $0$. The query becomes $$\mathbf{q} = [1 \cdot 1 + 0 \cdot 2,; 0 \cdot 1 + 0 \cdot 2] = [1, 0]$$
+we will use this query in the next section.
+
+*Why do we need three separate vectors instead of using the original patch vector $\mathbf{x}$ for everything?*
+
+Suppose we scored two patches using only their original vectors:
+$$\mathbf{x}_i \cdot \mathbf{x}_j$$
+
+
+The score between the ear and the snout would then be the same as the score between the snout and the ear. A patch would tend to match patches that look similar to itself. But the ear does not necessarily need information from another ear. It might need information from the snout, the eyes, or the outline of the head. Separate queries and keys allow a patch to look for something different from what it represents. The separate value vector also lets a patch share information that differs from the features used to match it.
+
+### Attention for one query, by hand
+
+**Lets calculate attention for one query.**
+
+First, we calculate the dot product between the query and every key. We then divide each score by the square root of the vector length. We will explain why this scaling is important ahead in this chapter.
+
+Next, softmax coverts the scores into weights. Finally, we multiply each value by its weights and add the results together.
+
+The equations are:
+
+$$a_j = \text{softmax}_j\left(\frac{\mathbf{q} \cdot \mathbf{k}_j}{\sqrt{d_h}}\right) \qquad \mathbf{o} = \sum_{j} a_j,\mathbf{v}_j$$
+
+here $\mathbf{q}$ is the query, $\mathbf{k}_j$ and $\mathbf{v}_j$ are the key and value of patch $j$, $d_h$ is the length of the query and the key vectors, $a_j$ is the **attention weight** assigned to patch $j$, and $\mathbf{o}$ is the output.
+
+Softmax runs over all the patches $j$, it makes every weights positive and ensures that all those weights add up to 1.
+
+We will now use our query $\mathbf{q} = [1, 0]$, so $d_h = 2$, and consider three patches:
+
+$$\mathbf{k}_0 = [1, 0] \quad \mathbf{k}_1 = [0, 1] \quad \mathbf{k}_2 = [1, 1] \qquad \mathbf{v}_0 = [1, 0] \quad \mathbf{v}_1 = [0, 1] \quad \mathbf{v}_2 = [2, 2]$$
+
+The dot products are $1$, $0$ and $1$.
+
+Dividing by $\sqrt{2} \approx 1.4142$ gives the scores
+
+$$[0.7071, 0, 0.7071]$$
+
+Next we apply softmax, and we need the exponential of each scores
+
+$e^{0.7071} \approx 2.0281$ and $e^{0} = 1$
+
+ The sum of the exponentials is: $2.0281 + 1 + 2.0281 = 5.0562$
+
+Dividing each exponential by this sum gives the attention weights:
+
+$$\left[\frac{2.0281}{5.0562}, \frac{1}{5.0562}, \frac{2.0281}{5.0562}\right] \approx [0.401, 0.198, 0.401]$$
+
+They weights add up to 1. Now we use these weights to combine the values:
+
+$$\mathbf{o} = 0.401 \cdot [1, 0] + 0.198 \cdot [0, 1] + 0.401 \cdot [2, 2] \approx [1.203, 1.000]$$
+
+Keys 0 and 2 receive larger weights because their dot products with the query are larger. Key 1 receives the smallest weight because its dot product is 0. Notice that key 1 still gets some weights. Softmax does not produce an exact zero for any of these finite scores. Also, the output is not equal to any one of the three values, it is a new vector formed by combining all three, with more influence from the values that received larger weights.
+
+![attention for one query](fig/ch5-attention-one-query.svg)
+
+PyTorch also gives us the same result.
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
+q = torch.tensor([1., 0.])             # [2], one query
+K = torch.tensor([[1., 0.],
+                  [0., 1.],
+                  [1., 1.]])           # [3, 2], three keys
+V = torch.tensor([[1., 0.],
+                  [0., 1.],
+                  [2., 2.]])           # [3, 2], three values
+
+scores = K @ q / q.shape[0] ** 0.5     # [3], one score per key, divided by sqrt(2)
+weights = F.softmax(scores, dim=-1)    # [3], add up to 1
+out = weights @ V                      # [2], a blend of the values
+
+print("scores ", scores)
+print("weights", weights, "sum", weights.sum().item())
+print("output ", out)
+```
+
+**Output:**
+
+```text
+scores tensor([0.7071, 0.0000, 0.7071])
+weights tensor([0.4011, 0.1978, 0.4011])
+sum 1.0 output tensor([1.2033, 1.0000])
+```
+
+They match the hand calculation: scores of about 0.7071, 0 and 0.7071, weights of about 0.401, 0.198 and 0.401 with a sum of 1, and an output of about $[1.203, 1.000]$.
+
+### Every patch at once
+
+So far, we have calculated attention for one query. In our encoder, all 196 patches ask questions at the same time. Each patch compares its query with all 196 keys, including its own key as well.
+We can put all the queries into a matrix $Q$ with one query per row. We do the same for the keys and values, creating matrices $K$ and $V$.
+
+Now we can calculate every query-key dot product in one matrix multiplication: $QK^\top$.
+The result is a score table with one row per query and one column per key. It is similar to the image-by-caption score table $S$ from our chapter 1.
+
+We apply softmax along each row, every row then contains the attention weights for one patch. We multiply the weight table by $V$ to combine the values for all patches at once.
+
+The complete equation for attention becomes:
+
+$$\text{Attention}(Q, K, V) = \text{softmax}!\left(\frac{QK^\top}{\sqrt{d_h}}\right)V$$
+
+here $Q$, $K$ and $V$ have shape $[N, d_h]$, where $N$ is the number of patches and $d_k$ is the vector length. The output also has the shape $[N, d_h]$ giving us one output vector per patch.
+
+We can check the shapes using out three-patch example. If all three patches have queries, then $Q$ has shape $[3, 2]$ and $K^\top$ would be $[2, 3]$. The matrix multiplication works like this:
+
+$$[3, \underline{2}] \times [\underline{2}, 3] \rightarrow [3, 3]$$
+
+The two inner dimensions must match. They disappear in the output, leaving a $[3,3]$ score table, each entry represents one query-key pair.
+
+We then multiply the score table's attention weights by the value matrix: $$[3, 3] \times [3, 2] \rightarrow [3, 2]$$
+The result contains one two-number output vector for each of the three patches.
+
+For our encoder, $N = 196$. The score table therefore contains: $196^2 = 38416$ score per attention head.
+
+This is the reason we divided the image into patches in chapter 2. The number of attention scores grows with the square of the number of patches.
+
+When queries, keys, and values all come from the same sequence, the operation is called **Self-Attention**, that is where the name `self_attn` comes from. Some models also use **Cross-Attention**, where one sequence attends to a separate sequence. For example, a text sequence can attend to an image sequence.
+
+Our encoder uses self-attention. It processes the image patches as one sequence, so each patch can gather information from every other patch.
+
+### Why divide by the square root of the head size
+
+The reason why we divide the dot products by $\sqrt{d_h}$. is that a dot product adds up $d_h$ individual products. As the vector gets longer, the number of terms increases, so the scores tend to grow.
+
+Suppose the numbers in the query and key vectors are random, with mean 0 and variance 1, each product $q_i k_i$ then also has mean 0 and variance 1.
+
+In chapter 4 we saw that the variances of independent terms add together. So the dot product of two such vectors has variance $d_h$, giving it a standard deviation of $\sqrt{d_h}$.
+
+This is the reasoning described in a footnote of the original Transformer paper.
+
+In our config, $d_h = 64$, so the raw products have an expected standard deviation of approx $\sqrt{64} = 8$. Dividing by 8 brings the standard deviation back to 1.
+
+*Why does this matter?*
+
+Softmax applies an exponential to each score. Large differences between scores can make one weight dominate the others.
+
+Consider two scores, 8 and 0. Softmax gives the first score this weight:
+
+$$\frac{e^{8}}{e^{8} + e^{0}} = \frac{2980.96}{2981.96} \approx 0.9997$$
+
+Almost all the attention goes to one key. 
+
+Now take scores 1 and 0. The first score receives: $$\frac{e}{e + 1} \approx 0.731$$
+The second score still receives about $0.269$. The attention is less concentrated.
+
+There is another problem with very large scores: the gradients become small. The derivative of a softmax probability $p$ with respect to its own score is $p(1 - p)$.
+
+When $p = 0.9997$ that value is about $0.0003$.
+When $p = 0.731$ it is $0.731 \cdot 0.269 \approx 0.197$.
+
+The second gradient is 100x larger. When softmax assigns almost all the weights to one key, the model can have a harder time learning from changes in the scores.
+
+![scaling-softmax](fig/ch5-scaling-softmax.svg)
+
+This is related to the temperature we discussed in chapter 1. There we used a scaling factor to sharpen a softmax distribution that was too flat. Here we divide by $\sqrt{d_h}$ to prevent the distribution from becoming too sharp at the start of training.
+
+*Why we use square root instead of dividing by $\sqrt{d_h}$?*
+
+Because the standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$.
+Dividing the full vector length would make the scores too small. Softmax would then assign nearly equal weights to all 196 patches, leaving attention with little ability to distinguish between them.
+
+We can test this with random vectors of our head size.
+
+```python
+torch.manual_seed(0)
+config = VisionConfig()
+d_h = config.hidden_size // config.num_attention_heads        # 64
+
+q = torch.randn(10000, d_h)                                   # [10000, 64]
+k = torch.randn(10000, d_h)                                   # [10000, 64]
+dots = (q * k).sum(dim=-1)                                    # [10000], one dot product per pair
+print(f"spread of raw dot products:    {dots.std():.3f}   (sqrt({d_h}) = {d_h ** 0.5:.1f})")
+print(f"spread after dividing by {d_h ** 0.5:.0f}: {(dots / d_h ** 0.5).std():.3f}")
+
+query = torch.randn(d_h)                                      # [64]
+keys = torch.randn(196, d_h)                                  # [196, 64]
+raw = keys @ query                                            # [196]
+print(f"largest softmax weight, raw:    {F.softmax(raw, dim=-1).max():.3f}")
+print(f"largest softmax weight, scaled: {F.softmax(raw / d_h ** 0.5, dim=-1).max():.3f}")
+```
+
+**Output:**
+
+```text
+spread of raw dot products:     8.002 (sqrt(64) = 8.0)
+spread after dividing by 8:     1.000
+largest softmax weight, raw:    0.937
+largest softmax weight, scaled: 0.037
+```
+
+**The spreads.** We generate 10,000 random query-key pairs. The raw dot products have a standard deviation close to 8, as predicted. After dividing by 8, the standard deviation will be close to 1.
+
+**The softmax.** We then compare one query against 196 keys. Without scaling, the largest attention weight is much more concentrated. With scaling, the largest weight is smaller, and the attention spreads across more keys.
+
+The practical takeaway is: scaling keeps the scores at a useful range. It allows softmax to distinguish between patches without becoming too concentrated at the start of training.
+
+For the real model, the head size is $1152/16=72$. It therefore divides the scores by: $\sqrt{72} \approx 8.49$.
+
+### Many heads instead of one
+
+A single attention table gives each patch one way to choose where to look. But a patch may need several kinds of information at once. It might need information from nearby patches, patches with similar colors, and patches that form the outline of the dog's head.
+
+**Multi-head attention** addresses this by running several smaller attention operations in parallel. Each operation is called a **head**, and each head has its own attention table.
+
+Our config has 12 heads. We split each 768-number query, key, and value into 12 groups of 64 numbers:
+
+$$d_h = \frac{D}{H} = \frac{768}{12} = 64$$
+
+Here, D is `hidden_size`, H is `num_attention_heads`, and dh is the **head size**, also called `head_dim` in the code.
+
+For the real model, the calculation is $1152/16=72$
+
+Head 0 uses numbers 0 through 63 of each query, key, and value. Head 1 uses numbers 64 through 127, and so on, until head 11.
+
+Each head calculates its own 196×196 score table, applies its own softmax, and combines its own values. The heads operate independently during this step.
+
+For example, the query projection for head 1 comes from rows 64 through 127 of $W^Q$. This gives that head a projection matrix of shape $[64,768]$. The key and value projections work the same way.
+
+We do not assign specific jobs to individual heads. During training, each head learns whichever attention patterns help the model perform its task. Some heads develop patterns that are easy to interpret, while others are harder to explain.
+
+Multi-head attention also does not increase the total number of dot-product multiplications compared with using one head of the same total width.
+
+One head with 768 numbers per vector would perform:
+
+$$12 \cdot 196 \cdot 196 \cdot 64 = 29503488$$
+
+multiplications to calculate its scores.
+
+Twelve heads with 64 numbers per vector perform:
+$$12 \cdot 196 \cdot 196 \cdot 64=29503488$$
+
+### Splitting into heads and gluing them back
+
+Splitting a vector into heads is a change of shape. We are not creating new numbers or throwing any away.
+
+After `q_proj`, the queries have shape $[B,196,768]$, where $B$ is the batch size, 196 is the number of patches, and 768 is the hidden size. The operation `view(B, 196, 12, 64)` divides the last dimension into 12 groups of 64. The shape becomes $[B,196,12,64]$. Next, `transpose(1, 2)` swaps the patch and head dimensions. The shape becomes $[B,12,196,64]$.
+
+Now each head contains a sequence of 196 vectors, each with 64 numbers. We can run all 12 heads in parallel. After attention, the output has shape $[B,12,196,64]$. We transpose it back to $[B,196,12,64]$, then combine the last two dimensions to get back to 768 numbers per patch. But there is a small problem: after a transpose, the tensor may no longer be stored in memory in the order that `view` expects.
+
+Let's look at a small example. Suppose we have two tokens, a and b, each containing four numbers. We split each token into two heads of two numbers each.
+
+The numbers are initially stored in this order:
+
+```text
+a0 a1 a2 a3 b0 b1 b2 b3
+```
+
+The `view` operation changes the shape to $[2,2,2]$, representing token, head, and number. The order of the numbers stays the same.
+
+The transpose changes the dimension order to head, token, and number. Head 0 now contains `a0 a1` followed by `b0 b1`. Head 1 contains `a2 a3` followed by `b2 b3`.
+
+Reading the tensor in this new order gives:
+
+```
+a0 a1 b0 b1 a2 a3 b2 b3
+```
+
+But the numbers in memory are still stored as:
+
+```
+a0 a1 a2 a3 b0 b1 b2 b3
+```
+
+A transpose does not move the numbers. It changes how PyTorch accesses them by changing the **strides**: the number of memory positions PyTorch skips to reach the next element along each dimension.
+
+A tensor is called **contiguous** when its elements are stored in the memory order expected by its current dimension layout.
+
+Now consider the attention output. The matrix multiplication creates a new tensor, stored in its own output order. When we transpose the result back to token order, the numbers for token a may be stored at positions 0, 1, 4, and 5 rather than in four consecutive positions.
+
+The `view` operation cannot combine these numbers into one dimension because they are not laid out as it expects. It raises an error.
+
+Calling `.contiguous()` solves the problem. It copies the numbers into memory in the required order. We can then use `view` or `reshape` to merge the heads.
+
+![contiguous-memory](fig/ch5-contiguous-memory.svg)
+
+We call `.contiguous()` after the first transpose too, so the heads are stored in memory in the same layout as a fresh attention output.
+
+```python
+torch.manual_seed(0)
+B, N, D = 1, 196, config.hidden_size
+H = config.num_attention_heads
+q = torch.randn(B, N, D)                                      # [1, 196, 768]
+
+qh = q.view(B, N, H, d_h)                                     # [1, 196, 12, 64], 768 read as 12 groups of 64
+qh = qh.transpose(1, 2).contiguous()                          # [1, 12, 196, 64], stored head by head, like a fresh attention output
+print(qh.shape)
+print("head 1 of patch 5 == dims 64 to 127 of patch 5:", torch.equal(qh[0, 1, 5], q[0, 5, 64:128]))
+
+back = qh.transpose(1, 2)                                     # [1, 196, 12, 64]
+print("contiguous after transpose?", back.is_contiguous())
+try:
+    back.view(B, N, D)
+except RuntimeError as e:
+    print("view fails:", str(e)[:60], "...")
+back = back.contiguous().reshape(B, N, D)                     # [1, 196, 768], heads side by side again
+print("glued back == original:", torch.equal(back, q))
+```
+
+**Output:**
+
+```text
+torch.Size([1, 12, 196, 64])
+head 1 of patch 5 == dims 64 to 127 of patch 5: True
+contiguous after transpose? False
+view fails: view size is not compatible with input tensor's size and str ...
+glued back == original: True
+```
+
+Lets look at the results:
+The shape is $[1, 12, 196, 64]$.
+
+The second line prints `True`: confirming that head 1 of patch 5 contains exactly numbers 64 through 127 of that patch.
+
+`Contiguous after transpose` prints `False`. The `view` operation should fail with an error about the tensor's size and stride.
+
+The original tensor and the tensor with the heads split and merged should be identical, so the final line prints `True`.
+
+![splitting into heads](fig/ch5-splitting-into-heads.svg)
+
+### Mixing the heads with out_proj
+
+After we merge the heads, the first 64 numbers of each patch come from head 0, the next 64 come from head 1, and so on.
+
+The numbers sit next to each other, but each head has worked independently. We still need a way to combine the information they found.
+
+That is the job of `out_proj`, another linear layer that maps 768 numbers to 768 numbers. Each output number can use information from all 768 input numbers, allowing the layer to mix information from every head.
+
+The equation is:
+
+$$\mathbf{y}_i = W_O,\text{Concat}\big(\mathbf{o}^{(1)}_i, \dots, \mathbf{o}^{(H)}_i\big) + \mathbf{b}_O$$
+
+Here, $\mathbf{o}^{(h)}_i$ is the output of head $h$ for patch $i$. Each head produces $d_h$ numbers, $\text{Concat}$ joins the outputs of all $H$ heads into one vector of $D$ numbers. The weight matrix $W_O$ has shape $[768, 768]$ and $b_O$ is the bias vector. $\mathbf{y}_i$ is what attention for patch $i$. The original Transformer paper calls this weight matrix $W^O$.
+
+Let's use a small example with two heads, each producing one number.
+Suppose head 1 outputs 0.5 and head 2 outputs 2. The merged vector is: $[0.5, 2]$. 
+
+We use the following output projection, with no bias:
+$$W_O = \begin{pmatrix} 1 & 1 \\ 1 & -1 \end{pmatrix}$$
+
+the output is: $$[0.5 + 2, 0.5 - 2] = [2.5, -1.5]$$
+Both output numbers depend on the outputs of both heads. This is how `out_proj` combines information across heads.
+
+### The Attention module
+
+We now have everything we need to implement `VisionAttention`.
+
+This class replaces the placeholder from the last chapter. It keeps the same interface: it accepts `hidden_states` and returns two things, the attention output and the attention weights.
+
+The four linear layers use the exact names expected by the checkpoint: `q_proj`, `k_proj`, `v_proj`, and `out_proj`. These are the four missing layer names we identified in chapter 4.
+
+Here is the data flow through the module, using our config's shapes.
+
+```text
+  hidden_states          [B, 196, 768]
+  q_proj, k_proj, v_proj [B, 196, 768] each
+  split into heads       [B, 12, 196, 64] each
+  q times k transposed   [B, 12, 196, 196]    one table per head
+  softmax over keys      [B, 12, 196, 196]    every row adds up to 1
+  times v                [B, 12, 196, 64]
+  heads glued back       [B, 196, 768]
+  out_proj               [B, 196, 768]
+```
+
+The module takes $N$ vectors of 768 numbers and returns $N$ vectors of 768 numbers. This keeps the same input-output shape as the other parts of our Transformer layer.
+
+![attention table](fig/ch5-attention-table.svg)
+
+```python
+class VisionAttention(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embed_dim = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = self.embed_dim // self.num_heads
+        self.scale = self.head_dim ** -0.5
+        self.dropout = config.attention_dropout
+
+        self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+
+    def forward(self, hidden_states):
+        B, N, _ = hidden_states.size()  # [B, N, D]
+        q = self.q_proj(hidden_states)
+        k = self.k_proj(hidden_states)
+        v = self.v_proj(hidden_states)
+
+        q = q.view(B, N, self.num_heads,
+        self.head_dim).transpose(1, 2)  # [B, H, N, d_h]
+        
+        k = k.view(B, N, self.num_heads,
+        self.head_dim).transpose(1, 2)  # [B, H, N, d_h]
+        
+        v = v.view(B, N, self.num_heads,
+        self.head_dim).transpose(1, 2)  # [B, H, N, d_h]
+
+        attn = torch.matmul(q, k.transpose(2, 3)) * self.scale  # [B, H, N, N]
+        attn = F.softmax(attn, dim=-1, dtype=torch.float32).to(q.dtype)
+        attn = F.dropout(attn, p=self.dropout, training=self.training)
+
+        out = torch.matmul(attn, v)                             # [B, H, N, d_h]
+        out = out.transpose(1, 2).contiguous()                  # [B, N, H, d_h]
+        out = out.reshape(B, N, self.embed_dim)                 # [B, N, D]
+        out = self.out_proj(out)
+        return out, attn
+
+
+torch.manual_seed(0)
+attn_layer = VisionAttention(config)
+x = torch.randn(1, 196, config.hidden_size)                     # [1, 196, 768]
+with torch.no_grad():
+    out, weights = attn_layer(x)
+print(out.shape, weights.shape)
+print("every row adds up to 1:", torch.allclose(weights.sum(dim=-1), torch.ones(1, 12, 196)))
+print("attention parameters:", sum(p.numel() for p in attn_layer.parameters()))
+```
+
+In the code;
+
+`self.scale = self.head_dim ** -0.5` calculates the scaling factor. With a head size of 64, the result is:
+$$64^{-0.5} = \frac{1}{8} = 0.125$$Multiplying by 0.125 is the same as dividing by $\sqrt{64} = 8$.
+
+`k.transpose(2, 3)` swaps the last two dimensions of the key tensor. Its shape changes from $[B, H, N, d_h] \rightarrow [B, H, d_h, N]$.
+
+`torch.matmul` multiplies the last two dimensions while keeping the batch and head dimensions. For each image and each head, it calculates: $$[N, d_h] \times [d_h, N] \rightarrow [N, N]$$This gives us one attention score table per head.
+
+The softmax runs along `dim=-1`, which represents the keys. Every row therefore adds up to 1.
+
+We also calculate softmax in 32-bit floating-point precision, then convert the result back to the query's data type using `.to(q.dtype)`. This helps maintain numerical stability when the model uses lower-precision data types.
+
+As we discussed in chapter 1, a 16-bit float has a maximum finite value of $65504$. PyTorch's softmax already subtracts the maximum score from each row before exponentiating. Computing the softmax in 32-bit precision gives the calculation more room and helps avoid numerical problems.
+
+**Dropout** randomly sets some attention weights to zero during training. This helps prevent the model from relying too heavily on particular attention connections.
+
+Our config uses `attention_dropout = 0.0`, as does the real model, so dropout has no effect here. The argument `training=self.training` also ensures that dropout is disabled when the module is in evaluation mode.
+
+Finally, the module returns `attn` along with the output. In the previous chapter, our placeholder returned `None` in that position. Now we have the real attention weights, which we can use to inspect where patches look.
+
+**Output:**
+
+```text
+torch.Size([1, 196, 768])
+torch.Size([1, 12, 196, 196]) every row adds up to 1: True
+attention parameters: 2362368
+```
+
+The output shape $[1,196,768]$, and the attention weights shape $[1,12,196,196]$.
+
+The weight tensor contains one $196×196$ attention table for each of the $12$ heads.
+
+The second line prints `True`, confirming that every row in every attention table adds up to $1$.
+
+The final line shows the total number of parameters to be $2,362,368$. We can calculate that number by hand.
+
+| Layer      | Calculation           | Parameters |
+| ---------- | --------------------- | ---------- |
+| `q_proj`   | $768 \cdot 768 + 768$ | 590,592    |
+| `k_proj`   | $768 \cdot 768 + 768$ | 590,592    |
+| `v_proj`   | $768 \cdot 768 + 768$ | 590,592    |
+| `out_proj` | $768 \cdot 768 + 768$ | 590,592    |
+| Attention  | $4 \cdot 590592$      | 2,362,368  |
+
+There is a useful comparison here. The entire attention module has exactly as many parameters as the `fc1` layer from the last chapter.
+
+Four $768\times768$ weight matrices contain the same number of weights as one $768\times3072$ matrix. Their biases also have the same total size because $4\cdot768=3072$.
+
+### Attention cannot see order
+
+In chapter 2, we said that attention treats its input as a bag of tokens. If we shuffle the patches, attention produces the same output for each patch, but the outputs appear in the new order.
+
+Now we can see why. The three input projections and `out_proj` process each token independently. Shuffling the input rows simply shuffles their outputs. The attention score table changes too: its rows and columns are shuffled to match the new token order. Softmax still operates on each row, and the weighted sum still combines the same values. Since addition does not depend on order, each patch gets the same result as before. Its output simply moves to the patch's new position in the sequence.
+
+We can check this with our small example. Swap key 0 with key 1, and swap their corresponding values too.
+
+The scores become: $$[0, 0.7071, 0.7071]$$the weights become: $$[0.198, 0.401, 0.401]$$The output is still approximately: $$[1.203, 1.000]$$The order of the inputs changed, but the result did not.
+
+![attention-order](fig/ch5-attention-order.svg)
+
+Let's test the same property with our full attention module.
+
+```python
+torch.manual_seed(0)
+perm = torch.randperm(196)  # a random shuffle of the 196 patches
+with torch.no_grad():
+    out, _ = attn_layer(x)  # [1, 196, 768]
+    out_shuffled, _ = attn_layer(x[:, perm]) # [1, 196, 768], same patches, shuffled order
+print("shuffle in, same results shuffled out:", torch.allclose(out_shuffled, out[:, perm], atol=1e-5))
+```
+
+**Output:**
+
+```text
+shuffle in, same results shuffled out: True
+```
+
+The output prints `True`.
+
+Attention can use the features in each patch, but attention alone cannot tell *where a patch came from*. The position vectors we added in chapter 2 provide that information.
+
+Without position embeddings, the encoder would not know whether the snout was to the right of the eye or above it. **Position embeddings give the model the information it needs to learn spatial relationships between patches**.
+
+### No mask inside the encoder
+
+Our attention module lets every patch read every other patch. It does not block any patch based on its position in the sequence.
+
+Language models need a different setup. When a model learns to predict the next token, it must not see tokens that come later in the sequence. Otherwise, it could use information that should not yet be available.
+
+Language models solve this with an **attention mask**. The mask blocks attention to future tokens by changing their scores before softmax.
+
+An image encoder does not have the same requirement. The patches are parts of an image, not a sequence in which later patches must be hidden. Every patch can use information from the entire image.
+
+That is why our encoder does not need a causal attention mask.
+
+### The complete encoder
+
+We have now implemented the real attention module. The new class uses the same name as the placeholder, `VisionAttention`.
+
+`VisionEncoderLayer` looks up `VisionAttention` by name whenever it creates a layer. Any model we build from this point onward will therefore use real attention.
+
+However, the `model` object we created in the previous chapter still contains the old placeholder. Changing the class definition does not replace modules inside an existing model. We must build the model again.
+
+Let's first count the parameters by hand.
+
+Each encoder layer gains $2362368$ attention parameters.
+
+| Part              | Calculation                                        | Parameters     |
+| ----------------- | -------------------------------------------------- | -------------- |
+| **Embeddings**    | from chapter 4                                     | **741,120**    |
+| **One layer**     | norms $3072$ + attention $2362368$ + MLP $4722432$ | **7,087,872**  |
+| **Twelve layers** | $12 \cdot 7087872$                                 | **85,054,464** |
+| **Final norm**    | $2 \cdot 768$                                      | **1,536**      |
+| **Total**         | $741120 + 85054464 + 1536$                         | **85,797,120** |
+
+The MLP accounts for approximately $66.6 \%$ of each layer's parameters, or about two-thirds. Attention accounts for most of the remaining third, while the two norms together account for less than $0.05\%$.
+
+The ViT paper reports about 86 million parameters for its base model. Our model is slightly smaller because it does not have a CLS token, a CLS position embedding, or a classification head.
+
+Now we can repeat the checkpoint check from the last chapter. Previously, we were missing 216 tensors. We have added the attention layers, so those tensors should now be present.
+
+We also skip any checkpoint tensor named `position_ids`, in case one is stored in the checkpoint. As we saw in chapter 2, our `position_ids` is a buffer that is not saved in the model's state dictionary.
+
+The block below checks the tensor names and shapes and counts the parameters in the real model.
+
+| Part           | Calculation                                            | Parameters      |
+| -------------- | ------------------------------------------------------ | --------------- |
+| Convolution    | $1152 \cdot 3 \cdot 14 \cdot 14$ weights + 1152 biases | 678,528         |
+| Position table | $256 \cdot 1152$                                       | 294,912         |
+| **Embeddings** | $678528 + 294912$                                      | **973,440**     |
+| Attention      | $4 \cdot (1152 \cdot 1152 + 1152)$                     | 5,313,024       |
+| MLP            | from chapter 4                                         | 9,921,872       |
+| Two norms      | $2 \cdot 2 \cdot 1152$                                 | 4,608           |
+| **One layer**  | $5313024 + 9921872 + 4608$                             | **15,239,504**  |
+| **27 layers**  | $27 \cdot 15239504$                                    | **411,466,608** |
+| **Final norm** | $2 \cdot 1152$                                         | **2,304**       |
+| **Total**      | $973440 + 411466608 + 2304$                            | **412,442,352** |
+
+The real model has 27 layers and a hidden size of 1152. It has about 412 million parameters, which is why the checkpoint name includes `so400m`.
+
+The name refers to the shape-optimized Vision Transformer studied in [Getting ViT in Shape](https://arxiv.org/abs/2305.13035). 
+
+```python
+import re
+from huggingface_hub import get_safetensors_metadata
+
+torch.manual_seed(0)
+model = VisionModel(config)        # built now, so it uses the real VisionAttention
+count = lambda m: sum(p.numel() for p in m.parameters())
+vm = model.vision_model
+print("one layer      ", count(vm.encoder.layers[0]))
+print("total          ", count(model))
+
+repo = "google/siglip-so400m-patch14-224"
+meta = get_safetensors_metadata(repo)
+ckpt = {name: tuple(info.shape)
+        for f in meta.files_metadata.values()
+        for name, info in f.tensors.items()
+        if name.startswith("vision_model.") and not name.startswith("vision_model.head.")
+        and not name.endswith("position_ids")}
+
+real = VisionConfig(hidden_size=1152, intermediate_size=4304, num_hidden_layers=27,
+                    num_attention_heads=16, patch_size=14)
+with torch.device("meta"):
+    ours = VisionModel(real)
+mine = {k: tuple(v.shape) for k, v in ours.state_dict().items()}
+
+print("checkpoint vision tensors:", len(ckpt), "| ours:", len(mine))
+print("missing in ours:", sorted(set(ckpt) - set(mine)))
+print("extra in ours:  ", sorted(set(mine) - set(ckpt)))
+print("wrong shape:    ", sorted(k for k in set(ckpt) & set(mine) if ckpt[k] != mine[k]))
+print("real model parameters:", sum(v.numel() for v in ours.state_dict().values()))
+```
+
+**Output:**
+
+```text
+one layer       7087872
+total           85797120
+checkpoint vision tensors: 437 | ours: 437
+missing in ours: []
+extra in ours:   []
+wrong shape:     []
+real model parameters: 412442352
+```
+
+The first two lines matches our earlier parameter counts: $7087872$ for one layer and $85797120$ for the complete model. Next, check the checkpoint. In the last chapter, it contained $437$ tensors, while our model had only $221$. Now both counts are $437$.
+
+The three lists being empty shows:
+
+- `missing in ours`: no checkpoint tensors are missing from our model.
+- `extra in ours`: our model has no unexpected tensors.
+- `wrong shape`: every tensor has the expected shape.
+
+The $216$ missing attention tensors are now present. Each of the $27$ layers has four attention projections, each with a weight and a bias. That gives us $27\cdot4\cdot2=216$ tensors.
+
+The final line reports the total number of parameters: $412,442,352$.
+
+Attention also has a significant memory cost in the real model. Each layer has $16$ heads, and each head calculates a table containing: $256^{2}=65536$ scores.
+
+Across all 16 heads, that is: $16\cdot65536=1048576$ attention scores for one image in one layer.
+
+Now consider the high-resolution version of this model family, has $4096$ patches.
+
+One attention head must then calculate: $4096^{2}=16,777,216$ scores. That is $256$ times as many scores as before, even though the number of patches has increased by only $16$ times.
+
+If we store the $16$ attention tables for one layer as 32-bit floats, they require:
+
+$$16\cdot16777216\cdot4=1,073,741,824$$
+
+bytes, or about 1 GB, for a single image.
+
+This is the main cost of attention at high resolutions: the number of scores grows with the square of the number of patches. We will encounter the same issue when we build the language model.
+
+### Real weights in our model, and the image through it
+
+Our model now has the correct parameter names and shapes. The next step is to load the actual trained weights.
+
+The checkpoint comes from **SigLIP**, an image encoder trained using the sigmoid loss we discussed in chapter 1. The vision-language model we will load later starts with this same image encoder and trains it further. This is the encoder our model will use.
+
+The code below reads the vision tensors from the checkpoint and loads them into our `VisionModel` with `strict=True`.
+
+In strict mode, PyTorch raises an error if any parameter name is missing or unexpected, or if a tensor has the wrong shape. In chapter 4, we checked the names and shapes listed in the checkpoint header. This time, we load the actual weights.
+
+We then load Hugging Face's implementation of the same model using the same checkpoint. Finally, we pass the dog image through both implementations and compare their outputs.
+
+We reuse `pix` from the chapter 3. It uses the same normalization expected by this model: pixel values are mapped to the range from −1 to 1.
+
+```python
+from huggingface_hub import hf_hub_download
+from safetensors import safe_open
+from transformers import SiglipVisionModel
+
+state = {}
+for fname in meta.files_metadata:                            # read only the vision tensors from the checkpoint
+    with safe_open(hf_hub_download(repo, fname), framework="pt") as f:
+        for k in f.keys():
+            if k in ckpt:
+                state[k] = f.get_tensor(k).float()
+
+siglip = VisionModel(real).eval()
+siglip.load_state_dict(state, strict=True)                    # fails loudly if any name or shape is wrong
+print("all", len(state), "tensors loaded into our VisionModel")
+
+ref = SiglipVisionModel.from_pretrained(repo).eval()          # Hugging Face's own implementation, same weights
+
+with torch.no_grad():
+    ours_out = siglip(pix)                                    # [1, 3, 224, 224] -> [1, 256, 1152]
+    ref_out = ref(pixel_values=pix).last_hidden_state         # [1, 256, 1152]
+print(ours_out.shape)
+print(f"largest difference from Hugging Face: {(ours_out - ref_out).abs().max():.2e}")
+print(f"typical size of an output number:     {ref_out.abs().mean():.3f}")
+```
+
+**Output:**
+
+```text
+**Loading...**
+torch.Size([1, 256, 1152])
+largest difference from Hugging Face: 4.62e-04
+typical size of an output number: 1.042
+```
+
+**Loading.** The first line reports that all 437 tensors were loaded. If any tensor name or shape were wrong, `load_state_dict` would raise an error.
+
+**The shape.** The dog image produces an output of shape $[1,256,1152]$. This means the encoder returns 256 patch vectors, each containing 1152 numbers. As we predicted in chapter 2, the 256 patches form a 16×16 grid.
+
+**The comparison.** The third line reports the largest absolute difference between our output and Hugging Face's output. The fourth line reports the average absolute size of the reference output values.
+
+Compare these two numbers. The largest difference should be several orders of magnitude smaller than the typical output value. This shows that both implementations compute the same function, up to small numerical differences.
+
+These differences come from floating-point rounding. The two implementations may perform the same operations in a different order, and floating-point calculations can produce slightly different results depending on that order.
+
+Our implementation now runs a real trained vision encoder. The patch convolution from chapter 2 and the attention module from this chapter work together to reproduce the output of Hugging Face's model.
+
+### Where the dog's patch looks
+
+
+**Now we can inspect the attention weights and see which patches look at which parts of the image.**
+
+Every attention layer produces a table showing how much each patch attends to every other patch. We can use these tables to see where a particular patch gathers information.
+
+The encoder layer normally discards the attention weights: `hidden_states, _ = self.self_attn(...)`.
+
+We can capture them using a **forward hook**. A forward hook is a small function that PyTorch calls after a module runs. It receives the module's inputs and outputs, allowing us to inspect them without changing the module itself.
+
+We attach hooks to three attention layers: the first layer, layer 0; a middle layer, layer 13; and the final layer, layer 26.
+
+Each hook saves `out[1]`, the attention weights. Their shape is $[1,16,256,256]$: one image, 16 heads, and a $256×256$ table for each head.
+
+We average the weights across the 16 heads. Then we select the row for one patch. This gives us 256 attention weights, one for every patch in the image.
+
+We can place those weights back onto the $16×16$ patch grid to visualize where the selected patch looks.
+
+The code selects row 7, column 5. This is patch $7\cdot16+5=117$, which covers the dog's left eye in our photo.
+
+You can change `r` and `c` to inspect another patch, such as the ear, the snout, or a patch containing grass.
+
+Before plotting the results, we need to consider **attention sinks**.
+
+In large Vision Transformers, some patches receive a large amount of attention from other patches, even when they contain little useful visual information. Research suggests that trained Vision Transformers can use a few low-information background patches as scratch space for information about the image. This behavior is discussed in [Vision Transformers Need Registers](https://arxiv.org/abs/2309.16588).
+
+Language models show a related behavior. They often assign a large amount of attention to the first token, a pattern studied in [Efficient Streaming Language Models with Attention Sinks](https://arxiv.org/abs/2309.17453).
+
+One possible explanation is the softmax operation. Every row of attention weights must add up to 1. Even when a head has no particularly useful information to retrieve, it still has to distribute its attention somewhere.
+
+These sink patches can dominate an attention map and make other patterns harder to see.
+
+To make the maps easier to inspect, we use a simple rule to identify possible sinks. This is a threshold we choose for our visualization, not a universal definition of an attention sink.
+
+Since each row adds up to 1, the average attention received by each of the 256 patches would be:
+
+$$\frac{1}{256}≈0.0039$$
+
+We label a patch as a sink if it receives more than five times this average:
+
+$$\frac{5}{256}≈0.0195$$
+
+The top row of the plot shows the original attention maps. The bottom row shows the same maps after we set the sink weights to zero and rescale the remaining weights so they add up to 1.
+
+```python
+store = {}
+layers_to_show = [0, real.num_hidden_layers // 2, real.num_hidden_layers - 1]   # first, middle, last
+hooks = [siglip.vision_model.encoder.layers[i].self_attn.register_forward_hook(
+             lambda m, inp, out, i=i: store.__setitem__(i, out[1]))            # out[1] is the attention table
+         for i in layers_to_show]
+with torch.no_grad():
+    siglip(pix)
+for h in hooks:
+    h.remove()
+
+side = real.image_size // real.patch_size                    # 16 patches per side
+P = real.patch_size                                           # 14 pixels
+n_tok = side * side                                           # 256
+r, c = 7, 5                                                   # the dog's left eye; move it anywhere
+k = r * side + c
+
+fig, ax = plt.subplots(2, 4, figsize=(16, 8))
+for row in range(2):
+    ax[row, 0].imshow(photo)
+    ax[row, 0].add_patch(plt.Rectangle((c * P, r * P), P, P, fill=False, ec="red", lw=2))
+ax[0, 0].set_title(f"patch {k}")
+
+for col, i in enumerate(layers_to_show, start=1):
+    a = store[i][0].mean(dim=0)                               # [16, 256, 256] -> [256, 256], averaged over heads
+    received = a.mean(dim=0)                                  # [256], share of all attention each patch receives
+    sinks = received > 5 / n_tok                              # [256], patches getting over 5x their fair share
+
+    m = a[k]                                                  # [256], where patch k looks
+    print(f"layer {i:2d}: {int(sinks.sum())} sink patches, "
+          f"they take {m[sinks].sum():.1%} of patch {k}'s attention")
+    m_clean = m.masked_fill(sinks, 0)
+    m_clean = m_clean / m_clean.sum()                         # rescale what is left to add up to 1
+
+    for row, (mm, title) in enumerate([(m, f"layer {i}, raw"),
+                                       (m_clean, f"layer {i}, {int(sinks.sum())} sink patches removed")]):
+        ax[row, col].imshow(photo)
+        ax[row, col].imshow(mm.view(side, side).numpy(), extent=(0, 224, 224, 0), alpha=0.6, cmap="Oranges")
+        ax[row, col].set_title(title)
+
+for a_ in ax.flat:
+    a_.axis("off")
+plt.tight_layout(); plt.show()
+```
+
+**Output:**
+
+```text
+layer 0: 5 sink patches, they take 49.0% of patch 117's attention
+layer 13: 4 sink patches, they take 19.0% of patch 117's attention
+layer 26: 7 sink patches, they take 40.3% of patch 117's attention
+```
+
+![dog attention](ch5-dog-attention.png)
+
+**Layer 0.** The output reports the number of sink patches and the percentage of patch 117's attention that goes to them.
+
+**Layer 13.** The same measurements show how much attention goes to the sink patches in the middle of the encoder.
+
+**Layer 26.** The final line shows the number of sink patches and the share of the eye patch's attention that they receive in the last layer.
+
+Now look at the plot.
+
+The first column shows the original photo, with patch 117 marked by a red square. The other columns show the attention maps for layers 0, 13, and 26. The top row shows the raw attention weights, while the bottom row shows the maps after removing the identified sinks.
+
+The darker the orange, the more attention the eye patch gives to that region.
+
+The ViT paper studied how far different attention heads look across an image. Some heads already attend to distant patches in the early layers. Others focus on nearby patches. On average, the attention distance tends to increase in deeper layers.
+
+In layer 0, the eye patch focuses mostly on itself and its neighbors. In layer 13, attention goes to other parts of the dog's head. In layer 26, the attention spreads across the dog's head and body rather than the surrounding grass.
+
+This is the information exchange we wanted to build. **A patch containing brown fur could belong to a dog, a bear, or a carpet. After attention, the patch can use information from the rest of the image to build a more useful representation of the fur**.
+
+### Where the new pieces sit
+
+Here's a look at the complete encoder, this time with the shapes used by the real model.
+
+```text
+  image              [B, 3, 224, 224]
+  embeddings         [B, 256, 1152]
+  layer 0            h = x + self_attn(layer_norm1(x))      every patch reads every patch
+                     y = h + mlp(layer_norm2(h))            each patch alone
+  layer 1            same                                   [B, 256, 1152]
+  ...
+  layer 26           same                                   [B, 256, 1152]
+  post_layernorm     [B, 256, 1152]
+```
+
+Inside every `self_attn` module, the data flows through these shapes:
+
+```text
+  q_proj, k_proj, v_proj    [B, 256, 1152] each
+  split into 16 heads       [B, 16, 256, 72] each
+  scores and softmax        [B, 16, 256, 256]
+  blend of the values       [B, 16, 256, 72]
+  heads glued, out_proj     [B, 256, 1152]
+```
+
+![ch5-so-far](fig/ch5-so-far.svg)
+
+There are no placeholders left in this part of the encoder.
+
+The patches can now exchange information through all $27$ layers. Each patch uses its **query** to compare itself with the other patches, assigns weights to their **keys**, and combines their **values**. The attention output then joins the residual stream through the shortcut.
+
+By the end of the encoder, **a patch containing brown fur can represent more than the appearance of the fur itself. It can also carry information gathered from the rest of the dog**.
+
+But there is still a gap in our model.
+
+We fed the encoder `pix`, a tensor we prepared by hand in chapter 3 using a resize operation and a few lines of arithmetic. We also have only the image side of the model. The other side needs a text question, converted into tokens, with room reserved for the image.
+
+In the next chapter, we build the **processor**. It will prepare an image in exactly the format the encoder expects and convert a text question into a sequence of tokens, with 256 positions reserved for the image.
+
+---
+
