@@ -3145,6 +3145,7 @@ Nearest neighbor is fast, but it can cause problems when an image is heavily red
 Our processor uses bicubic resampling, through `Image.Resampling.BICUBIC`. PaliGemma's training images were resized this way, so we use the same method. However, two libraries can both use bicubic resampling and still produce slightly different pixels. They may round values differently or use slightly different weighing curves. We will see this difference in a moment and make it disappear at the end of the chapter.
 
 ![Figure Resampling](fig/ch6-resampling.svg)
+
 The row $[10, 20, 30, 40]$ shrinks to 2 pixels three ways: nearest neighbor keeps $[10, 30]$, averaging gives $[15, 35]$, bicubic resampling uses a smooth weight curve across neighboring pixels. The lower example shows a fine stripe pattern reduced by a factor of 13. Nearest neighbor produces false wide stripes while PIL's stretched curve produces a smoother gray result.
 
 
@@ -3505,6 +3506,7 @@ Our prompt contains 8 tokens, so the total is:
 $$T = 256 + 1 + 8 + 1 = 266$$
 
 ![preparing the text](fig/ch6-prompt-tokens.svg)
+
 The figure shows our prompt `"answer en what color is the dog?"`, with 8 prompt tokens, 266 IDs, and 266 ones in the attention mask. The empty frames on the left represent the 256 image positions. Next comes the yellow `<bos>` token, followed by the blue prompt tokens and the green newline on its own.
 
 There is one more detail to handle. Gemma's tokenizer adds a `<bos>` token to the beginning of every text by default.
@@ -3699,6 +3701,7 @@ Our processor now produces exactly the inputs PaliGemma was trained on.
 The pixels can now pass through everything we built in the first five chapters. The token IDs are ready, but they still need the language model.
 
 ![Chapter 6 So Far](fig/ch6-so-far.svg)
+
 **The dog photo is resized to 224 × 224 and converted into `pixel_values`. These values pass through the completed vision encoder, which produces 256 vectors. Below them is the row of 266 positions: 256 empty image positions, `<bos>`, the 8 prompt pieces, and `\n`. The 256 vectors hover above the empty image positions because they cannot fit into them yet.**
 
 The seating chart is ready, but the image positions are still empty.
