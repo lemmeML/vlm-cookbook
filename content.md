@@ -2302,7 +2302,7 @@ The complete equation for attention becomes:
 
 $$\text{Attention}(Q, K, V) = \text{softmax}!\left(\frac{QK^\top}{\sqrt{d_h}}\right)V$$
 
-here $Q$, $K$ and $V$ have shape $[N, d_h]$, where $N$ is the number of patches and $d_k$ is the vector length. The output also has the shape $[N, d_h]$ giving us one output vector per patch.
+here $Q$, $K$ and $V$ have shape $[N, d_h]$, where $N$ is the number of patches and $d_h$ is the vector length. The output also has the shape $[N, d_h]$ giving us one output vector per patch.
 
 We can check the shapes using out three-patch example. If all three patches have queries, then $Q$ has shape $[3, 2]$ and $K^\top$ would be $[2, 3]$. The matrix multiplication works like this:
 
@@ -2351,7 +2351,7 @@ There is another problem with very large scores: the gradients become small. The
 When $p = 0.9997$ that value is about $0.0003$.
 When $p = 0.731$ it is $0.731 \cdot 0.269 \approx 0.197$.
 
-The second gradient is 100x larger. When softmax assigns almost all the weights to one key, the model can have a harder time learning from changes in the scores.
+The second gradient is 600x larger. When softmax assigns almost all the weights to one key, the model can have a harder time learning from changes in the scores.
 
 ![scaling-softmax](fig/ch5-scaling-softmax.svg)
 
