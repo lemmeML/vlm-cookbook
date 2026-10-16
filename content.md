@@ -2425,7 +2425,7 @@ Multi-head attention also does not increase the total number of dot-product mult
 
 One head with 768 numbers per vector would perform:
 
-$$12 \cdot 196 \cdot 196 \cdot 64 = 29503488$$
+$$196 \cdot 196 \cdot 768 = 29503488$$
 
 multiplications to calculate its scores.
 
