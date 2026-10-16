@@ -758,6 +758,8 @@ torch.Size([1, 196, 768])
 
 We can now pass the patches through the embedding layer, using pretrained ViT weights loaded into our `VisionEmbedding` class. The code shows three steps: each patch becomes a 768-dimensional content vector, a learned position vector is added, and the sum is what the transformer receives.
 
+The code first turns the photo into a tensor called `pix`, shape $[1, 3, 224, 224]$, with every pixel value moved into the range from $-1$ to $1$. We explain these steps in the next chapter.
+
 ```python
 import torch
 import torch.nn.functional as F
@@ -1255,6 +1257,8 @@ So far our norms have only seen numbers we made up. Time for the real thing. The
 Let's give it the dog image from the last chapter.
 
 First the photo has to be converted into the numbers this model expects. Dividing by 255 puts every pixel value between 0 and 1. Subtracting 0.5 and dividing by 0.5 then puts the values between −1 and 1. This is a normalization too, but there is an important difference. They are fixed numbers (0.5,0.5), same for every image. Layer norm, by contrast, computes its statistics separately from each token. The processor we build later will handle this step for us. Our real model uses the same normalization.
+
+We keep the result in a tensor called `pix`, of shape $[1, 3, 224, 224]$: one image, 3 color channels, and 224 by 224 pixels. The code builds it from the dog photo in a few steps. It resizes the photo to $224 \times 224$, divides every value by 255, subtracts 0.5 and divides by 0.5. On the way, `permute(2, 0, 1)` moves the color channels in front of the height and the width, the order PyTorch layers expect, and `[None]` adds the batch dimension of 1 at the front. We will feed `pix` to the encoder again in the chapters ahead, so remember what it holds: the dog photo, written in the numbers the encoder expects. When we build the processor, it will produce this same tensor for any photo.
 
 Then we take the `VisionEmbeddings` written in the last chapter and copy the trained patch weights and position vectors into it. We compare three versions of the same 196 vectors: the vectors as they leave the embeddings, the vectors after a plain norm with $\gamma = 1$ and $\beta = 0$, and the vectors after the trained norm with its learned $\gamma$ and $\beta$.
 
@@ -3051,9 +3055,8 @@ By the end of the encoder, **a patch containing brown fur can represent more tha
 
 But there is still a gap in our model.
 
-We fed the encoder `pix`, a tensor we prepared by hand in chapter 3 using a resize operation and a few lines of arithmetic. We also have only the image side of the model. The other side needs a text question, converted into tokens, with room reserved for the image.
+We fed the encoder `pix`, a tensor we prepared using a resize operations. We also have only the image side of the model. The other side needs a text question, converted into tokens, with room reserved for the image.
 
 In the next chapter, we build the **processor**. It will prepare an image in exactly the format the encoder expects and convert a text question into a sequence of tokens, with 256 positions reserved for the image.
 
 ---
-
