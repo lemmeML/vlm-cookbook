@@ -2357,7 +2357,7 @@ The second gradient is 100x larger. When softmax assigns almost all the weights 
 
 This is related to the temperature we discussed in chapter 1. There we used a scaling factor to sharpen a softmax distribution that was too flat. Here we divide by $\sqrt{d_h}$ to prevent the distribution from becoming too sharp at the start of training.
 
-*Why we use square root instead of dividing by $\sqrt{d_h}$?*
+*Why we use square root instead of dividing by $d_h$?*
 
 Because the standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$.
 Dividing the full vector length would make the scores too small. Softmax would then assign nearly equal weights to all 196 patches, leaving attention with little ability to distinguish between them.
