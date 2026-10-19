@@ -2249,7 +2249,7 @@ Dividing each exponential by this sum gives the attention weights:
 
 $$\left[\frac{2.0281}{5.0562}, \frac{1}{5.0562}, \frac{2.0281}{5.0562}\right] \approx [0.401, 0.198, 0.401]$$
 
-They weights add up to 1. Now we use these weights to combine the values:
+The weights add up to 1. Now we use these weights to combine the values:
 
 $$\mathbf{o} = 0.401 \cdot [1, 0] + 0.198 \cdot [0, 1] + 0.401 \cdot [2, 2] \approx [1.203, 1.000]$$
 
@@ -2327,7 +2327,7 @@ Our encoder uses self-attention. It processes the image patches as one sequence,
 
 ### Why divide by the square root of the head size
 
-The reason why we divide the dot products by $\sqrt{d_h}$. is that a dot product adds up $d_h$ individual products. As the vector gets longer, the number of terms increases, so the scores tend to grow.
+The reason why we divide the dot products by $\sqrt{d_h}$ is that a dot product adds up $d_h$ individual products. As the vector gets longer, the number of terms increases, so the scores tend to grow.
 
 Suppose the numbers in the query and key vectors are random, with mean 0 and variance 1, each product $q_i k_i$ then also has mean 0 and variance 1.
 
@@ -2348,7 +2348,8 @@ $$\frac{e^{8}}{e^{8} + e^{0}} = \frac{2980.96}{2981.96} \approx 0.9997$$
 Almost all the attention goes to one key. 
 
 Now take scores 1 and 0. The first score receives: $$\frac{e}{e + 1} \approx 0.731$$
-The second score still receives about $0.269$. The attention is less concentrated.
+
+The second score still receives about $0.269$, But now, the attention is less concentrated.
 
 There is another problem with very large scores: the gradients become small. The derivative of a softmax probability $p$ with respect to its own score is $p(1 - p)$.
 
@@ -2361,9 +2362,9 @@ The second gradient is 600x larger. When softmax assigns almost all the weights 
 
 This is related to the temperature we discussed in chapter 1. There we used a scaling factor to sharpen a softmax distribution that was too flat. Here we divide by $\sqrt{d_h}$ to prevent the distribution from becoming too sharp at the start of training.
 
-*Why we use square root instead of dividing by $d_h$?*
+*Why divide by $\sqrt{d_h}$?*
 
-Because the standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$.
+The standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$.
 Dividing the full vector length would make the scores too small. Softmax would then assign nearly equal weights to all 196 patches, leaving attention with little ability to distinguish between them.
 
 We can test this with random vectors of our head size.
@@ -2399,7 +2400,7 @@ largest softmax weight, scaled: 0.037
 
 **The softmax.** We then compare one query against 196 keys. Without scaling, the largest attention weight is much more concentrated. With scaling, the largest weight is smaller, and the attention spreads across more keys.
 
-The practical takeaway is: scaling keeps the scores at a useful range. It allows softmax to distinguish between patches without becoming too concentrated at the start of training.
+> So scaling keeps the scores at a useful range. It allows softmax to distinguish between patches without becoming too concentrated at the start of training.
 
 For the real model, the head size is $1152/16=72$. It therefore divides the scores by: $\sqrt{72} \approx 8.49$.
 
@@ -2624,7 +2625,7 @@ print("every row adds up to 1:", torch.allclose(weights.sum(dim=-1), torch.ones(
 print("attention parameters:", sum(p.numel() for p in attn_layer.parameters()))
 ```
 
-In the code;
+In the code:
 
 `self.scale = self.head_dim ** -0.5` calculates the scaling factor. With a head size of 64, the result is:
 $$64^{-0.5} = \frac{1}{8} = 0.125$$Multiplying by 0.125 is the same as dividing by $\sqrt{64} = 8$.
@@ -2742,9 +2743,9 @@ Each encoder layer gains $2362368$ attention parameters.
 | **Final norm**    | $2 \cdot 768$                                      | **1,536**      |
 | **Total**         | $741120 + 85054464 + 1536$                         | **85,797,120** |
 
-The MLP accounts for approximately $66.6 \%$ of each layer's parameters, or about two-thirds. Attention accounts for most of the remaining third, while the two norms together account for less than $0.05\%$.
+The MLP accounts for approximately $66.6 \%$ of each layer's parameters. Attention accounts for $33\%$ while the two norms together account for less than $0.05\%$.
 
-The ViT paper reports about 86 million parameters for its base model. Our model is slightly smaller because it does not have a CLS token, a CLS position embedding, or a classification head.
+If you compare this to the ViT paper that has about 86 million parameters for its base model, our model is slightly smaller because it does not have a CLS token, a CLS position embedding, or a classification head.
 
 Now we can repeat the checkpoint check from the last chapter. Previously, we were missing 216 tensors. We have added the attention layers, so those tensors should now be present.
 
@@ -3716,4 +3717,3 @@ That is the point where a picture becomes the part of a sentence.
 
 
 ---
-
