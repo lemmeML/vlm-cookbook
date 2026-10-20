@@ -2114,7 +2114,7 @@ _Complete Chapter 4 Code: [Colab Notebook](https://colab.research.google.com/dri
 
 # Chapter 5. Making the Patches Talk
 
-At the end of the last chapter our encoder had its complete skeleton: 12 layers, each with two norms, two shortcuts and an MLP, followed by a final norm on the residual stream. But one part was still a placeholder. The `self_attn` module, which could only return zeros, and every patch passed through all twelve layers, knowing nothing about others. Everything we have built so far processes one patch at a time. The patch **embedding**, the **position** vector, the **norm** and the **MLP** never look past their own patch. In this chapter we build the part that lets the patches communicate and share information with each other through something called **"Attention"**.
+At the end of the last chapter our encoder had its complete skeleton: 12 layers, each with two norms, two shortcuts and an MLP, followed by a final norm on the residual stream. But the `self_attn` module was still a placeholder. It could only return zeros, so every patch passed through all twelve layers without knowing anything about the others. Everything we have built so far processes one patch at a time. The patch **embedding**, the **position** vector, the **norm** and the **MLP** never look past their own patch. In this chapter we build the part that lets the patches communicate and share information with each other through something called **"Attention"**.
 
 ### Attention Is All You Need
 
@@ -2125,20 +2125,27 @@ The idea of **attention** first became important in machine translation. In 2014
 In 2017, the seminal paper ["Attention Is All You Need"](https://arxiv.org/abs/1706.03762) introduced the the **Transformer**.
 Instead of processing words one at a time, the Transformer used attention to process all tokens in parallel.
 
-The Transformer later became the foundation for models such as **BERT**, **GPT** models, Vision Transformers, CLIP, and the vision language model as well that we are building.
+The Transformer later became the foundation for models such as **BERT**, **GPT** models, Vision Transformers, CLIP, and the vision language model we are building.
 
 ![attention](fig/ch5-attention-idea.svg)
 
 
 Attention is a way to lookup information.
 
-A Python dictionary takes a key and returns the value stored under that exact key. Attention works differently, it compares a **query** with every available **key**, coverts the scores into weights that add up to 1, and uses those weights to combine the corresponding **values**. Better matches receive larger weights and contribute more to the result.
+A Python dictionary takes a key and returns the value stored under that exact key.
+Attention works differently: it compares a **query** with every available **key**, coverts the scores into weights that add up to 1, and uses those weights to combine the corresponding **values**. Better matches receive larger weights and contribute more to the result.
 
-Consider the word "*bank*" in the two sentences: *"we fished from the river bank"*, and "*we saved money at the bank*". In the first sentence the word "*bank*" can draw information from words such as "*river*" and "*fished*". In the second, it can draw information from "*money*" and "*saved*".
+Consider the word "*bank*" in these two sentences: *"we fished from the river bank"*, and "*we saved money at the bank*". In the first sentence the word "*bank*" can draw information from words such as "*river*" and "*fished*". In the second, it can draw information from "*money*" and "*saved*".
 
 The word is the same, but the information it gathers changes with the sentence. This is how "*bank*" gets a different representation depending on its context.
 
-Patches work the same way, through attention the ear patch can gather information from the snout, the eyes, and other parts of the image.
+Patches work the same way. Before attention, the ear patch only knows what is inside its own small square of the photo: brown fur and an edge. On its own, that patch cannot tell what the fur belongs to. 
+
+Through attention the ear patch gathers information from the other patches. The ear patch looks across the whole image, decides which patches are useful, and copies part of their information into its own vector. If the snout and the eyes turn out to be useful, their information is added to the ear's vector, which now describes more than "brown fur with an edge" and now also carries information like "next to a snout and an eye, near the top of a head". Every patch does this at the same time, so the snout is gathering from the ear too.
+
+This repeats in every layer. Each layer starts from the richer vectors the previous layer produced, so a patch can ask more specific questions as it goes deeper. A patch that began as only brown fur can end up carrying enough information to be recognized as part of a dog's ear.
+
+We never tell the ear to look at the snout, training decides what each patch looks for, what it offers to others and what it passes on.
 
 
 > **Main Idea: Each patch compares its query with the keys of all patches, turns the resulting scores into weights that add up to one, and uses those weights to combine their values.**
