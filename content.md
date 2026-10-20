@@ -3344,19 +3344,21 @@ same as pix: True
 largest difference from Hugging Face's image processor: 7.84e-03
 ```
 
-**The photo.** The original size is `(3000, 3000)`, using PIL's `(width, height)` order. The image is square, so resizing does not squeeze it in either direction.
+The original size of the photo is `(3000, 3000)`, using PIL's `(width, height)` order. The image is square, so resizing does not squeeze it in either direction.
 
-**The tensor.** `pixel_values` has shape $[1,3,224,224]$ and data type is `float32`. Its smallest value is $−1.000$, and its largest is $1.000$. This means the image uses the full range: at least one color channel has a value of 0, and at least one has a value of 255.
+`pixel_values` has shape $[1,3,224,224]$ and data type is `float32`. Its smallest value is $−1.000$, and its largest is $1.000$. This means the image uses the full range: at least one color channel has a value of 0, and at least one has a value of 255.
 
-**Same as `pix`**. The result is `True`, we had built `pix` by resizing the image to `(224, 224)`, dividing by 255, subtracting 0.5, and dividing by 0.5. We said the processor would handle these steps later. This is that implementation, using the same steps.
+Our tensor is same as **`pix`**, we had built `pix` by resizing the image to `(224, 224)`, dividing by 255, subtracting 0.5, and dividing by 0.5. We said the processor would handle these steps later. This is that implementation, using the same steps.
 
 **PIL** uses bicubic resampling when no method is specified in our earlier `resize` call, so the resizing method also matches.
 
-**HuggingFace.** The largest difference is $7.84×10^{−3}$. One brightness level out of 255 is $1/255$ after rescaling. After dividing by 0.5 during normalization, the difference becomes $2/255\approx0.00784$.
+The largest difference from HF's image processor is $7.84×10^{−3}$. One brightness level out of 255 is $1/255$ after rescaling. After dividing by 0.5 during normalization, the difference becomes $2/255\approx0.00784$.
 
 This means that at least one color channel of one pixel differs by one brightness level between the two results. HF image processor does not use PIL for resizing by default. Two resizing implementations can both use bicubic resampling and still round some pixels differently.
 
-This small difference does not matter to the model. **The image side is complete. Now let's prepare the question.**
+This small difference does not matter to the model.
+
+**The image side is complete. Now let's prepare the question!**
 
 ### From words to tokens
 
@@ -3371,15 +3373,15 @@ or `"answer en what color is the dog?"`
 
 (for the pretrained checkpoint of `paligemma-3b-pt-224` the prompt has a prefix “answer en”. PaliGemma was trained on many tasks, each task with short prefix, and “answer en” tells it to answer the question that follows in English).
 
-**One token per character.** Our prompt contains 32 characters, including spaces, so this method produces 32 tokens. The vocabulary stays small, with only a few hundred symbols for English.
+Our prompt contains 32 characters, including spaces, so this method produces 32 tokens. The vocabulary stays small, with only a few hundred symbols for English. This method assigns one token per character.
 
 However, the sequences become longer. Attention calculates scores for pairs of tokens, so its cost grows with the square of the sequence length. With 32 tokens, it calculates $32^2=1024$ scores. With the 8 tokens we will use, its $8^2=64$ scores. 16 times fewer scores.
 
 A single character also carries very little meaning, much like a single pixel.
 
-**One token per word.** This method produces shorter sequences, but the vocabulary becomes much larger. The words "dog", "dogs", "doggo", and "Dog" would each need their own row in the vocabulary. Every language adds more words. New names and typos also cause problems because a word that never appeared during training would have no ID.
+**One token per word** produces shorter sequences, but the vocabulary becomes much larger. The words "dog", "dogs", "doggo", and "Dog" would each need their own row in the vocabulary. Every language adds more words. New names and typos also cause problems because a word that never appeared during training would have no ID.
 
-**Pieces of words.** Modern tokenizers use a method between these two extremes. Common words often become a single token, while rare words are split into smaller, common pieces. This method is called **Subword Tokenization**.
+Modern tokenizers use a method of **Pieces of words**. Common words often become a single token, while rare words are split into smaller, common pieces. This method is called **Subword Tokenization**.
 
 The pieces are not chosen randomly, but are learned from a large collection of text. One popular method is **byte pair encoding**, or **BPE**. It starts with individual characters and repeatedly joins the neighboring pair that appears most often.
 
