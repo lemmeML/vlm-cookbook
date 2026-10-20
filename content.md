@@ -1170,7 +1170,7 @@ tensor([[-1.3416, -0.4472, 0.4472, 1.3416], [-1.3416, -0.4472, 0.4472, 1.3416]])
 
 The first two results show the values we worked out by hand, about $-1.34, -0.45, 0.45, 1.34$, and our function agrees with PyTorch's. The flat token gives four clean zeros with $\epsilon$, without the guard, it produces four NaNs.
 
-You write this function once to understand what is happening. In the model we simply use `nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)`, which performs the same computation and stores $\gamma$ and $\beta$ for us. It stores $\gamma$ as `weight` and $\beta$ as `bias`, and those are the names the pretrained checkpoint uses too.
+We write this function once to understand what is happening. In the model we simply use `nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)`, which performs the same computation and stores $\gamma$ and $\beta$ for us. It stores $\gamma$ as `weight` and $\beta$ as `bias`, and those are the names the pretrained checkpoint uses too.
 
 Always pass `eps` explicitly. `nn.LayerNorm` defaults to `1e-5`, but the pretrained encoder was trained with `1e-6`. Leaving it out will not produce an error, the model will still load and run, but it will compute slightly different numbers from the ones used during training.
 
@@ -1333,11 +1333,11 @@ after gamma and beta     spread from 0.094 to 0.148
 
 Each map shows the spread of one patch at the position where the patch came form in the picture. Let's read them one at a time.
 
-**Before the norm.** The spread varies from patch to patch, from 0.394 to 1.351. The widest patch is about $1.351 / 0.394 \approx 3.4$ times wider than the narrowest. You will not find a clean outline of the dog in this map. The last chapter explains why: each vector is the patch's content plus its position vector, so its size reflects both what the patch contains and where that patch sits. This is exactly what the first layer would receive without a norm: numbers whose scale depends on the photo, the patch and its position. A different photo could produce a different pattern of scales, leaving the layer to deal with whatever happens to arrive.
+**Before the norm,** the spread varies from patch to patch, from 0.394 to 1.351. The widest patch is about $1.351 / 0.394 \approx 3.4$ times wider than the narrowest. You will not find a clean outline of the dog in this map. The last chapter explains why: each vector is the patch's content plus its position vector, so its size reflects both what the patch contains and where that patch sits. This is exactly what the first layer would receive without a norm: numbers whose scale depends on the photo, the patch and its position. A different photo could produce a different pattern of scales, leaving the layer to deal with whatever happens to arrive.
 
-**After the plain norm.** Every patch has spread exactly 1.000, so the map becomes one flat color. The scale information is while the relative patterns inside each vector remain. Whatever the photo does to the magnitude of a patch, the first layer now receives every patch at the same normalized scale.
+**After the plain norm,** every patch has spread exactly 1.000, so the map becomes one flat color. The scale information is while the relative patterns inside each vector remain. Whatever the photo does to the magnitude of a patch, the first layer now receives every patch at the same normalized scale.
 
-**After the trained $\gamma$ and $\beta$.** The spread now ranges from 0.094 and 0.148. Training did not choose to keep spread 1. Instead the learned $\gamma$ values substantially shrink the normalized features. The exact spread of each patch depends on both its normalized values and the feature-wise $\gamma$ values applied to them. Attention multiplies these values by its own weights next, so the model is free to choose one scale here and compensate for it elsewhere.
+**After the trained $\gamma$ and $\beta$** the spread now ranges from 0.094 and 0.148. Training did not choose to keep spread 1. Instead the learned $\gamma$ values substantially shrink the normalized features. The exact spread of each patch depends on both its normalized values and the feature-wise $\gamma$ values applied to them. Attention multiplies these values by its own weights next, so the model is free to choose one scale here and compensate for it elsewhere.
 
 The spreads are no longer exactly equal: they range from 0.094 to 0.148. Each feature has its own $\gamma$ and $\beta$, so different patches can end up with slightly different spreads depending on which feature values they contain. But compare the ranges. Before the norm, the widest patch was about 3.4 times wider than the narrowest. After it, the ratio is about $0.148 / 0.094 \approx 1.6$.
 
@@ -1439,9 +1439,9 @@ So far, everything we have built works on one token at a time: the patch embeddi
 
 The MLP does three things to each token:
 
-**Expand.** A linear layer called `fc1` turns the 768 numbers into 3072 numbers.
-**Bend.** A function called GELU bends each of those numbers.
-**Compress.** A second linear layer called `fc2` turns the 3072 numbers back into 768.
+**Expand:** A linear layer called `fc1` turns the 768 numbers into 3072 numbers.
+**Bend:** A function called GELU bends each of those numbers.
+**Compress:** A second linear layer called `fc2` turns the 3072 numbers back into 768.
 
 ("fc" stands for fully connected, an older name for a linear layer. You will also see the MLP called the **feed forward network**.)
 
@@ -1450,7 +1450,9 @@ $$\text{MLP}(\mathbf{x}) = W_2 \thinspace \text{GELU}\big(W_1\mathbf{x} + \mathb
 here, $W_1$ and $\mathbf{b}_1$ are the weights and biases of `fc1`, $W_2$ and $\mathbf{b}_2$ of `fc2`. 
 $W_1$ has shape $[3072, 768]$ and $W_2$ has shape $[768, 3072]$. (PyTorch writes a linear layer's weight shape as output size first, then input size.)
 
-**Why make the vector bigger in the middle?** It gives the MLP more room to work. You can think of each of the 3072 middle numbers as a small detector that checks the token for one pattern. GELU decides how strongly each detector's answer counts, and `fc2` combines all 3072 answers back into 768 numbers.
+*Why make the vector bigger in the middle?*
+
+It gives the MLP more room to work. You can think of each of the 3072 middle numbers as a small detector that checks the token for one pattern. GELU decides how strongly each detector's answer counts, and `fc2` combines all 3072 answers back into 768 numbers.
 
 Making the middle four times wider is the usual choice: 768 and 3072 in our config, 512 and 2048 in the original Transformer. The real model we load later uses 1152 and 4304. This size was chosen by a study that searched for the best shape for a given compute budget ([Getting ViT in Shape, 2023](https://arxiv.org/abs/2305.13035)).
 
@@ -2077,11 +2079,11 @@ final norm   0.902
 ```
 
 
-**MLP.** The largest difference between VisionMLP and the trained ViT's MLP is **0.010559**, while a typical output value has a magnitude of about **0.8526**. The small difference comes from using the tanh approximation instead of the exact GELU. Apart from that approximation, our MLP is reproducing the trained module correctly.
+The largest difference between VisionMLP and the trained ViT's MLP is **0.010559**, while a typical output value has a magnitude of about **0.8526**. The small difference comes from using the tanh approximation instead of the exact GELU. Apart from that approximation, our MLP is reproducing the trained module correctly.
 
-**The spread column.** The residual stream starts with a spread of **0.768** and reaches **10.653** after the last layer. **The spread grows steadily layer by layer, increasing by roughly 14× overall, although the amount of growth varies from layer to layer.** This is what we would expect from a residual stream that keeps accumulating corrections. Nothing inside the stack forces the stream itself back to a fixed scale. The final norm changes that: the last line, **0.902**, shows the stream after post_layernorm has brought it back to a steady scale.
+The residual stream starts with a spread of **0.768** and reaches **10.653** after the last layer. **The spread grows steadily layer by layer, increasing by roughly 14× overall, although the amount of growth varies from layer to layer.** This is what we would expect from a residual stream that keeps accumulating corrections. Nothing inside the stack forces the stream itself back to a fixed scale. The final norm changes that: the last line, **0.902**, shows the stream after post_layernorm has brought it back to a steady scale.
 
-**The cosine column.** The cosine values range from **0.638** to **0.900**. Every layer therefore keeps a substantial part of the vector it receives. The trained ViT is not throwing away the representation at every layer and starting over. It keeps the existing stream and adds new information to it.
+The cosine values range from **0.638** to **0.900**. Every layer therefore keeps a substantial part of the vector it receives. The trained ViT is not throwing away the representation at every layer and starting over. It keeps the existing stream and adds new information to it.
 
 Unlike our stand-in, of course, these layers contain real attention. Some of those added corrections therefore come from other patches.
 
@@ -2898,11 +2900,11 @@ largest difference from Hugging Face: 4.62e-04
 typical size of an output number: 1.042
 ```
 
-**Loading.** The first line reports that all 437 tensors were loaded. If any tensor name or shape were wrong, `load_state_dict` would raise an error.
+The first line of the output reports that all 437 tensors were loaded. If any tensor name or shape were wrong, `load_state_dict` would raise an error.
 
-**The shape.** The dog image produces an output of shape $[1,256,1152]$. This means the encoder returns 256 patch vectors, each containing 1152 numbers. As we predicted in chapter 2, the 256 patches form a 16×16 grid.
+The dog image produces an output of shape $[1,256,1152]$. This means the encoder returns 256 patch vectors, each containing 1152 numbers. As we predicted in chapter 2, the 256 patches form a 16×16 grid.
 
-**The comparison.** The third line reports the largest absolute difference between our output and Hugging Face's output. The fourth line reports the average absolute size of the reference output values.
+The third line in the output reports the largest absolute difference between our output and Hugging Face's output. The fourth line reports the average absolute size of the reference output values.
 
 Compare these two numbers. The largest difference should be several orders of magnitude smaller than the typical output value. This shows that both implementations compute the same function, up to small numerical differences.
 
@@ -3010,11 +3012,11 @@ layer 26: 7 sink patches, they take 40.3% of patch 117's attention
 
 ![dog attention](fig/ch5-dog-attention.png)
 
-**Layer 0.** The output reports the number of sink patches and the percentage of patch 117's attention that goes to them.
+**Layer 0:** The output reports the number of sink patches and the percentage of patch 117's attention that goes to them.
 
-**Layer 13.** The same measurements show how much attention goes to the sink patches in the middle of the encoder.
+**Layer 13:** The same measurements show how much attention goes to the sink patches in the middle of the encoder.
 
-**Layer 26.** The final line shows the number of sink patches and the share of the eye patch's attention that they receive in the last layer.
+**Layer 26:** The final line shows the number of sink patches and the share of the eye patch's attention that they receive in the last layer.
 
 Now look at the plot.
 
@@ -3173,9 +3175,9 @@ That is why our `resize` function accepts `size=(height, width)` but passes `(wi
 
 The encoder does not receive pixel values between 0 to 255, instead, every value is converted to a range from $-1$ to $1$, we do this in two steps.
 
-**Rescaling**. Divide every value by 255, which moves the values into the range 0-1.
+**Rescaling** divides every value by 255, which moves the values into the range 0-1.
 
-**Normalization**. Subtract mean and divide by a standard deviation
+**Normalization** subtract mean and divide by a standard deviation
 To refresh your memory, Mean is the average of a list of numbers, while Standard Deviation measures how spread out those numbers are.
 
 Here the mean and std are fixed values. We do not calculate them from the image. The mean is $0.5$ and the standard deviation is also $0.5$, we use these same values for all the three color channels.
@@ -3638,19 +3640,19 @@ first 3 tokens: ['<image>', '<image>', '<image>']
 last tokens:    ['<bos>', 'answer', '▁en', '▁what', '▁color', '▁is', '▁the', '▁dog', '?', '\n']
 ```
 
-**The vocabulary.** The tokenizer contains $257,153$ tokens both before and after we add the extra tokens. This is because PaliGemma's tokenizer already contains all of them. The `<image>` token has ID $257,152$, the last ID in the vocabulary, as we had discussed earlier.
+For **vocabulary** our tokenizer contains $257,153$ tokens both before and after we add the extra tokens. This is because PaliGemma's tokenizer already contains all of them. The `<image>` token has ID $257,152$, the last ID in the vocabulary, as we had discussed earlier.
 
-**The prompt.** produces 8 pieces, with ▁ marking spaces. The piece `answer` has no marker because Gemma's tokenizer does not add an invisible space at the beginning of a text.
+**Prompt** produces 8 pieces, with ▁ marking spaces. The piece `answer` has no marker because Gemma's tokenizer does not add an invisible space at the beginning of a text.
 
 This is why tokenizing the prompt by itself produces the same 8 pieces as tokenizing it inside the full string. It also means we can count the prompt tokens separately.
 
-**The shapes.** `pixel_values` has shape $[1,3,224,224]$, and `input_ids` has shape $[1,266]$. This matches the total we calculated: $256+1+8+1=266$.
+`pixel_values` has the shape $[1,3,224,224]$, and `input_ids` has shape $[1,266]$. This matches the total we calculated: $256+1+8+1=266$.
 
-**The mask.** Every value is 1. We processed only one prompt, so no padding was needed.
+In **mask** every value is 1, we processed only one prompt so no padding was needed.
 
-**The seats.** Exactly $256$ IDs match $257,152$, the ID of the `<image>` token. There is one for each image patch.
+**The seats** have exactly $256$ IDs match $257,152$, the ID of the `<image>` token. There is one for each image patch.
 
-**The two ends.** The sequence starts with `<image>` tokens. Its last 10 tokens are `<bos>`, the 8 prompt pieces, and `'\n'` on its own.
+The sequence starts with `<image>` tokens. Its last 10 tokens are `<bos>`, the 8 prompt pieces, and `'\n'` on its own.
 
 This matches the format described in the paper, token for token.
 
@@ -3683,11 +3685,11 @@ same input_ids:    True
 same pixel_values: True
 ```
 
-**The warning.** The official processor expects the text to contain the `<image>` tokens. Our prompt does not include them, so the official processor adds them automatically, just as our processor does. The warning tells us that this has happened.
+The official processor expects the text to contain the `<image>` tokens. Our prompt does not include them, so the official processor adds them automatically, just as our processor does. The warning tells us that this has happened.
 
-**The IDs.** The result is `True`. All 266 token IDs match exactly, including the image positions, `<bos>`, the prompt, and the newline.
+The result for the **IDs** is `True`, all 266 token IDs match exactly, including the image positions, `<bos>`, the prompt, and the newline.
 
-**The pixels.** The result is also `True`. All 150,528 pixel values match exactly. The small difference we saw earlier came from the resizing implementation.
+The **pixel** result is also `True`, all 150,528 pixel values match exactly. The small difference we saw earlier came from the resizing implementation.
 
 Our processor now produces exactly the inputs PaliGemma was trained on.
 
