@@ -2141,13 +2141,11 @@ Consider the word "*bank*" in these two sentences: *"we fished from the river ba
 
 The word is the same, but the information it gathers changes with the sentence. This is how "*bank*" gets a different representation depending on its context.
 
-Patches work the same way. Before attention, the ear patch only knows what is inside its own small square of the photo: brown fur and an edge. On its own, that patch cannot tell what the fur belongs to. 
+Patches work the same way, Before attention the ear patch only knows what is inside its own small square of the photo: brown fur and an edge. On its own, that patch cannot tell what the fur belongs to. 
 
-Through attention the ear patch gathers information from the other patches. The ear patch looks across the whole image, decides which patches are useful, and copies part of their information into its own vector. If the snout and the eyes turn out to be useful, their information is added to the ear's vector, which now describes more than "brown fur with an edge" and now also carries information like "next to a snout and an eye, near the top of a head". Every patch does this at the same time, so the snout is gathering from the ear too.
+Through attention the ear patch gathers information from the other patches, the ear patch looks across the whole image, decides which patches are useful, and copies part of their information into its own vector. If the snout and the eyes turn out to be useful, their information is added to the ear's vector, which now describes more than "brown fur with an edge" and now also carries information like "next to a snout and an eye, near the top of a head". Every patch does this at the same time, so the snout is gathering from the ear too.
 
-This repeats in every layer. Each layer starts from the richer vectors the previous layer produced, so a patch can ask more specific questions as it goes deeper. A patch that began as only brown fur can end up carrying enough information to be recognized as part of a dog's ear.
-
-We never tell the ear to look at the snout, training decides what each patch looks for, what it offers to others and what it passes on.
+This gets repeated in every layer, starting from the richer vectors the previous layer produced so a patch can ask more specific questions as it goes deeper. We never tell the patches where to look, training decides what each patch looks for, what it offers to others and what it passes on.
 
 
 > **Main Idea: Each patch compares its query with the keys of all patches, turns the resulting scores into weights that add up to one, and uses those weights to combine their values.**
@@ -2179,19 +2177,26 @@ The ear patch contains 768 numbers describing its local image features, such as 
 
 That depends on the image. In one photo, the snout might be two patches to the right. In another, it might be near the edge. A third photo might not contain a dog at all. We cannot decide in advance which patches matter. Each patch must use the current image to decide where to look and how much information to take from each patch.
 
-Attention does this in three steps. It scores every patch on how useful that patch is to the patch asking question. It convers the scores into weights that add up to 1. And it combines the information from all patches using those weights.
+Attention does this in three steps. It scores every patch on how useful that patch is to the patch asking question. It converts the scores into weights that add up to 1. And it combines the information from all patches using those weights.
 
 ### Query, key and value
 
-Each patch uses three vectors to take part in attention. Each vector has a different role.
+Each patch uses three vectors to take part in attention, and each vector has a different role.
 
-- The **query** represent what the patch is looking for. (think of it as the question card)
-- The **key** represents the information a patch makes available for matching. (think of it as the name tag)
-- The **value** contains the information a patch can pass to other patches. (think of it as the notebook)
+- The **query** represent what the patch is looking for. It is the question card: it says what this patch wants to find out, and only the patch that is asking uses it.
+- The **key** represents what a patch offers for matching. It is the name tag: a short label that others read to decide whether this patch is worth listening to. Nobody copies anything from a name tag, it only helps them choose.
+- The **value** contains the information a patch passes on. It is the notebook: the actual content handed over once someone has decided to listen.
 
-We create these vectors using three separate linear layers: `q_proj`, `k_proj` and `v_proj`.
+#### How the three work together
 
-Each of these layers takes 768 numbers as inputs and produces 768 numbers as outputs. And all three layers receive the same input: the patch vector after `layer_norm1`.
+Picture the ear patch holding its question card: "where is the rest of my head?", It holds the card up against every name tag in the room, including itself. A tag that answers the question well, like the snout's "middle of a face here", gets a high score. A tag like the sky's "plain blue" gets a low score. The ear then copies from every notebook, mostly from the patches that scored high and some from the rest. What's taken is a mix of notebooks, not the nametags.
+
+The tag and the notebook are kept apart, and on purpose. What makes a patch easy to find is not the details about it. The snout's tag only needs to say "I am the middle of a face", while its notebook contains all the details, like its shape, color, shadows, and other information.
+Every patch runs all the three parts at once, the ear asks with its own card while every other patch reads its tag, and copies from its notebook. In the read model, the cards, tags and notebooks are lists of $768$ numbers, which the training computes.
+
+These vectors are created using three separate linear layers: `q_proj`, `k_proj` and `v_proj`.
+
+Each of these layers takes $768$ numbers as inputs and produces $768$ numbers as outputs. And all three layers receive the same input: the patch vector after `layer_norm1`.
 
 The equations of these layers are as follows:
 
@@ -2200,19 +2205,23 @@ $$\mathbf{q}_i = W^{Q}\mathbf{x}_i + \mathbf{b}_Q \qquad \mathbf{k}_i = W^{K}\ma
 Here, $\mathbf{x}_i$ is the vector for patch $i$ after `layer_norm1`.
 The vectors $\mathbf{q}_i$, $\mathbf{k}_i$ and $\mathbf{v}_i$ are its **query**, **key** **and** **value**.
 
-Each weight matrix $W$ has shape $[768, 768]$ and each bias vector $\mathbf{b}$ holds 768 numbers, these are the same kinds of weights and biases we used in the MLP. 
+Each weight matrix $W$ has shape $[768, 768]$ and each bias vector $\mathbf{b}$ holds $768$ numbers, these are the same kinds of weights and biases we used in the **MLP**. 
 
 The original Transformer paper writes the three weight matrices as $W^Q$, $W^K$ and $W^V$.
 
 #### Lets work through a small example
 
 Suppose a patch has the input vector $\mathbf{x} = [1, 2]$.
+
 We use a query weight matrix that keeps the first number and drops the second.
 
 $$W_Q = \begin{pmatrix} 1 & 0 \\ 0 & 0 \end{pmatrix}$$
 
-assume the bias is $0$. The query becomes $$\mathbf{q} = [1 \cdot 1 + 0 \cdot 2,; 0 \cdot 1 + 0 \cdot 2] = [1, 0]$$
+Assume the bias is $0$. The query becomes:
+
+$$\mathbf{q} = [1 \cdot 1 + 0 \cdot 2, 0 \cdot 1 + 0 \cdot 2] = [1, 0]$$
 we will use this query in the next section.
+
 
 *Why do we need three separate vectors instead of using the original patch vector $\mathbf{x}$ for everything?*
 
@@ -2228,7 +2237,7 @@ The score between the ear and the snout would then be the same as the score betw
 
 First, we calculate the dot product between the query and every key. We then divide each score by the square root of the vector length. We will explain why this scaling is important ahead in this chapter.
 
-Next, softmax coverts the scores into weights. Finally, we multiply each value by its weights and add the results together.
+Next, softmax coverts the scores into weights, we then multiply each value by its weights and add the results together.
 
 The equations are:
 
@@ -2299,11 +2308,11 @@ weights tensor([0.4011, 0.1978, 0.4011])
 sum 1.0 output tensor([1.2033, 1.0000])
 ```
 
-They match the hand calculation: scores of about 0.7071, 0 and 0.7071, weights of about 0.401, 0.198 and 0.401 with a sum of 1, and an output of about $[1.203, 1.000]$.
+They match the hand calculation: scores of about 0.7071, 0 and 0.7071, weights 0.401, 0.198 and 0.401 with a sum of 1, and an output $[1.203, 1.000]$.
 
 ### Every patch at once
 
-So far, we have calculated attention for one query. In our encoder, all 196 patches ask questions at the same time. Each patch compares its query with all 196 keys, including its own key as well.
+So far, we have calculated attention for one query. In our encoder, all 196 patches ask questions at the same time. Each patch compares its query with all 196 keys, including its own key.
 We can put all the queries into a matrix $Q$ with one query per row. We do the same for the keys and values, creating matrices $K$ and $V$.
 
 Now we can calculate every query-key dot product in one matrix multiplication: $QK^\top$.
@@ -2317,26 +2326,26 @@ $$\text{Attention}(Q, K, V) = \text{softmax}!\left(\frac{QK^\top}{\sqrt{d_h}}\ri
 
 here $Q$, $K$ and $V$ have shape $[N, d_h]$, where $N$ is the number of patches and $d_h$ is the vector length. The output also has the shape $[N, d_h]$ giving us one output vector per patch.
 
-We can check the shapes using out three-patch example. If all three patches have queries, then $Q$ has shape $[3, 2]$ and $K^\top$ would be $[2, 3]$. The matrix multiplication works like this:
+We can check the shapes using our three-patch example, if all three patches have queries, then $Q$ has shape $[3, 2]$ and $K^\top$ would be $[2, 3]$. The matrix multiplication works like this:
 
 $$[3, \underline{2}] \times [\underline{2}, 3] \rightarrow [3, 3]$$
 
-The two inner dimensions must match. They disappear in the output, leaving a $[3,3]$ score table, each entry represents one query-key pair.
+The two inner dimensions must match, they disappear in the output leaving a $[3,3]$ score table, each entry represents one query-key pair.
 
 We then multiply the score table's attention weights by the value matrix: $$[3, 3] \times [3, 2] \rightarrow [3, 2]$$
 The result contains one two-number output vector for each of the three patches.
 
-For our encoder, $N = 196$. The score table therefore contains: $196^2 = 38416$ score per attention head.
+For our encoder, $N = 196$. The score table contains: $196^2 = 38416$ score per attention head.
 
 This is the reason we divided the image into patches in chapter 2. The number of attention scores grows with the square of the number of patches.
 
-When queries, keys, and values all come from the same sequence, the operation is called **Self-Attention**, that is where the name `self_attn` comes from. Some models also use **Cross-Attention**, where one sequence attends to a separate sequence. For example, a text sequence can attend to an image sequence.
+When queries, keys, and values all come from the same sequence, the operation is called **Self-Attention**, which is where the name `self_attn` comes from. Some models also use **Cross-Attention**, where one sequence attends to a separate sequence. For example, a text sequence can attend to an image sequence.
 
-Our encoder uses self-attention. It processes the image patches as one sequence, so each patch can gather information from every other patch.
+Our encoder uses self-attention, processing the image patches as one sequence where each patch gathers information from every other patch.
 
 ### Why divide by the square root of the head size
 
-The reason why we divide the dot products by $\sqrt{d_h}$ is that a dot product adds up $d_h$ individual products. As the vector gets longer, the number of terms increases, so the scores tend to grow.
+The reason we divide the dot products by $\sqrt{d_h}$ is that a dot product adds up $d_h$ individual products. As the vector gets longer, the number of terms increases, so the scores tend to grow.
 
 Suppose the numbers in the query and key vectors are random, with mean 0 and variance 1, each product $q_i k_i$ then also has mean 0 and variance 1.
 
@@ -2358,9 +2367,10 @@ Almost all the attention goes to one key.
 
 Now take scores 1 and 0. The first score receives: $$\frac{e}{e + 1} \approx 0.731$$
 
-The second score still receives about $0.269$, But now, the attention is less concentrated.
+The second score still receives about $0.269$. But now, the attention is less concentrated.
 
-There is another problem with very large scores: the gradients become small. The derivative of a softmax probability $p$ with respect to its own score is $p(1 - p)$.
+There is another problem with very large scores: the gradients become small.
+The derivative of a softmax probability $p$ with respect to its own score is $p(1 - p)$.
 
 When $p = 0.9997$ that value is about $0.0003$.
 When $p = 0.731$ it is $0.731 \cdot 0.269 \approx 0.197$.
@@ -2371,10 +2381,7 @@ The second gradient is 600x larger. When softmax assigns almost all the weights 
 
 This is related to the temperature we discussed in chapter 1. There we used a scaling factor to sharpen a softmax distribution that was too flat. Here we divide by $\sqrt{d_h}$ to prevent the distribution from becoming too sharp at the start of training.
 
-*Why divide by $\sqrt{d_h}$?*
-
-The standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$.
-Dividing the full vector length would make the scores too small. Softmax would then assign nearly equal weights to all 196 patches, leaving attention with little ability to distinguish between them.
+The standard deviation of the dot products grows with $\sqrt{d_h}$ not $d_h$. Dividing the full vector length would make the scores too small. Softmax would then assign nearly equal weights to all 196 patches, leaving attention with little ability to distinguish between them.
 
 We can test this with random vectors of our head size.
 
@@ -2405,11 +2412,11 @@ largest softmax weight, raw:    0.937
 largest softmax weight, scaled: 0.037
 ```
 
-**The spreads.** We generate 10,000 random query-key pairs. The raw dot products have a standard deviation close to 8, as predicted. After dividing by 8, the standard deviation will be close to 1.
+We generate 10,000 random query-key pairs. The raw dot products have a standard deviation of 8.002, after dividing by 8 the standard deviation will be close to 1.
 
-**The softmax.** We then compare one query against 196 keys. Without scaling, the largest attention weight is much more concentrated. With scaling, the largest weight is smaller, and the attention spreads across more keys.
+We compare one query against 196 keys. Without scaling, the largest attention weight is much more concentrated. With scaling, the largest weight is smaller, and the attention spreads across more keys.
 
-> So scaling keeps the scores at a useful range. It allows softmax to distinguish between patches without becoming too concentrated at the start of training.
+> Scaling keeps the scores at a useful range. It allows softmax to distinguish between patches without becoming too concentrated at the start of training.
 
 For the real model, the head size is $1152/16=72$. It therefore divides the scores by: $\sqrt{72} \approx 8.49$.
 
