@@ -2422,81 +2422,68 @@ For the real model, the head size is $1152/16=72$. It therefore divides the scor
 
 ### Many heads instead of one
 
-A single attention table gives each patch one way to choose where to look. But a patch may need several kinds of information at once. It might need information from nearby patches, patches with similar colors, and patches that form the outline of the dog's head.
+A single attention table gives each patch one way to choose where to look but a patch may need several kinds of information at once. It might need information from nearby patches, patches with similar colors, and patches that form the outline of the dog's head.
 
 **Multi-head attention** addresses this by running several smaller attention operations in parallel. Each operation is called a **head**, and each head has its own attention table.
 
-Our config has 12 heads. We split each 768-number query, key, and value into 12 groups of 64 numbers:
+Back in the room example, each person now carries several question cards instead of one, with a matching name tag and notebook section for each. Every head asks its own question. One head might ask "who is right next to me" and give almost all its weights to the neighbors. Another might ask "where is the outline of the head" and look at patches far across the image. Each head has its own budget of $1$, so each one can focus fully on its own question without taking attention away from others.
+
+The answers are not averaged together but each head returns its own small output. These outputs are placed side by side in the patch's vector. The ear ends up with a report on its neighbor, a report on the outline, and so on, each in its own slot. Later in the chapter `out_proj` combines these reports into one result.
+ 
+Our config has $12$ heads. We split each $768$-number query, key, and value into $12$ groups of $64$ numbers:
 
 $$d_h = \frac{D}{H} = \frac{768}{12} = 64$$
 
-Here, D is `hidden_size`, H is `num_attention_heads`, and dh is the **head size**, also called `head_dim` in the code.
+**D** is `hidden_size`, **H** is `num_attention_heads`, and $d_h$ is the **head size**, also called `head_dim`.
 
 For the real model, the calculation is $1152/16=72$
 
-Head 0 uses numbers 0 through 63 of each query, key, and value. Head 1 uses numbers 64 through 127, and so on, until head 11.
+Head $0$ uses numbers $0$ through $63$ of each query, key, and value. Head $1$ uses numbers $64$ through $127$, and so on, until head $11$.
 
-Each head calculates its own 196×196 score table, applies its own softmax, and combines its own values. The heads operate independently during this step.
+Each head calculates its own $196\times196$ score table, applies its own softmax, and combines its own values. The heads operate independently during this step.
 
-For example, the query projection for head 1 comes from rows 64 through 127 of $W^Q$. This gives that head a projection matrix of shape $[64,768]$. The key and value projections work the same way.
+For example, the query projection for head $1$ comes from rows $64$ through $127$ of $W^Q$. This gives that head a projection matrix of shape $[64,768]$. The key and value projections work the same way.
 
 We do not assign specific jobs to individual heads. During training, each head learns whichever attention patterns help the model perform its task. Some heads develop patterns that are easy to interpret, while others are harder to explain.
 
-Multi-head attention also does not increase the total number of dot-product multiplications compared with using one head of the same total width.
+**Multi-head attention** also does not increase the total number of dot-product multiplications compared with using one head of the same total width.
 
-One head with 768 numbers per vector would perform:
+One head with $768$ numbers per vector would perform:
 
 $$196 \cdot 196 \cdot 768 = 29503488$$
 
 multiplications to calculate its scores.
 
-Twelve heads with 64 numbers per vector perform:
+Twelve heads with $64$ numbers per vector perform:
 $$12 \cdot 196 \cdot 196 \cdot 64=29503488$$
 
 ### Splitting into heads and gluing them back
 
-Splitting a vector into heads is a change of shape. We are not creating new numbers or throwing any away.
 
-After `q_proj`, the queries have shape $[B,196,768]$, where $B$ is the batch size, 196 is the number of patches, and 768 is the hidden size. The operation `view(B, 196, 12, 64)` divides the last dimension into 12 groups of 64. The shape becomes $[B,196,12,64]$. Next, `transpose(1, 2)` swaps the patch and head dimensions. The shape becomes $[B,12,196,64]$.
+![splitting into heads](fig/ch5-splitting-into-heads.svg)
 
-Now each head contains a sequence of 196 vectors, each with 64 numbers. We can run all 12 heads in parallel. After attention, the output has shape $[B,12,196,64]$. We transpose it back to $[B,196,12,64]$, then combine the last two dimensions to get back to 768 numbers per patch. But there is a small problem: after a transpose, the tensor may no longer be stored in memory in the order that `view` expects.
 
-Let's look at a small example. Suppose we have two tokens, a and b, each containing four numbers. We split each token into two heads of two numbers each.
+Splitting a vector into heads is a change of shape, we are not creating new numbers or throwing any away.
 
-The numbers are initially stored in this order:
+After `q_proj`, the queries have shape $[B,196,768]$, where $B$ is the batch size, $196$ is the number of patches, and 768 is the hidden size. The operation `view(B, 196, 12, 64)` divides the last dimension into 12 groups of 64. The shape becomes $[B,196,12,64]$. Next, `transpose(1, 2)` swaps the patch and head dimensions. The shape becomes $[B,12,196,64]$.
 
-```text
-a0 a1 a2 a3 b0 b1 b2 b3
-```
+Now each head contains a sequence of 196 vectors, each with 64 numbers. We can run all $12$ heads in parallel. After attention, the output has shape $[B,12,196,64]$. We transpose it back to $[B,196,12,64]$ then combine the last two dimensions to get back to $768$ numbers per patch.
 
-The `view` operation changes the shape to $[2,2,2]$, representing token, head, and number. The order of the numbers stays the same.
+But there is a small problem: after a transpose, the tensor may no longer be stored in memory, it only changes the order in which PyTorch reads them by changing the tensor's **strides**: how many memory position PyTorch skips to reach the next element along each dimension. After a transpose, the tensor is no longer stored in the order it is read, and we say it is not **contiguous**. `view` can only merge dimensions whose numbers sit side by side in memory so it raises an error on such a tensor.
 
-The transpose changes the dimension order to head, token, and number. Head 0 now contains `a0 a1` followed by `b0 b1`. Head 1 contains `a2 a3` followed by `b2 b3`.
+Calling `.contiguous()` copies the numbers into memory in the order the tensor is read. After that, `view` or `reshape` can merge the heads.
 
-Reading the tensor in this new order gives:
-
-```
-a0 a1 b0 b1 a2 a3 b2 b3
-```
-
-But the numbers in memory are still stored as:
-
-```
-a0 a1 a2 a3 b0 b1 b2 b3
-```
-
-A transpose does not move the numbers. It changes how PyTorch accesses them by changing the **strides**: the number of memory positions PyTorch skips to reach the next element along each dimension.
-
-A tensor is called **contiguous** when its elements are stored in the memory order expected by its current dimension layout.
-
-Now consider the attention output. The matrix multiplication creates a new tensor, stored in its own output order. When we transpose the result back to token order, the numbers for token a may be stored at positions 0, 1, 4, and 5 rather than in four consecutive positions.
-
-The `view` operation cannot combine these numbers into one dimension because they are not laid out as it expects. It raises an error.
-
-Calling `.contiguous()` solves the problem. It copies the numbers into memory in the required order. We can then use `view` or `reshape` to merge the heads.
 
 ![contiguous-memory](fig/ch5-contiguous-memory.svg)
 
+Take two tokens, a and b, each with four numbers, split into two heads.
+
+Memory holds `a0 a1 a2 a3 b0 b1 b2 b3`
+
+After transpose, PyTorch reads as: `a0 a1 b0 b1 a2 a3 b2 b3`
+
+but memory has not changed until `.contiguous()` copies it.
+ 
 We call `.contiguous()` after the first transpose too, so the heads are stored in memory in the same layout as a fresh attention output.
 
 ```python
@@ -2526,20 +2513,11 @@ print("glued back == original:", torch.equal(back, q))
 torch.Size([1, 12, 196, 64])
 head 1 of patch 5 == dims 64 to 127 of patch 5: True
 contiguous after transpose? False
-view fails: view size is not compatible with input tensor's size and str ...
+view fails: view size is not compatible with input tensor's size and stride
 glued back == original: True
 ```
 
-Lets look at the results:
-The shape is $[1, 12, 196, 64]$.
-
-The second line prints `True`: confirming that head 1 of patch 5 contains exactly numbers 64 through 127 of that patch.
-
-`Contiguous after transpose` prints `False`. The `view` operation should fail with an error about the tensor's size and stride.
-
-The original tensor and the tensor with the heads split and merged should be identical, so the final line prints `True`.
-
-![splitting into heads](fig/ch5-splitting-into-heads.svg)
+The shape is $[1, 12, 196, 64]$, and head 1 of patch 5 holds exactly numbers 64 to 127 of that patch. After the transpose back, the tensor is not contiguous, so `view` fails with an error as we had discussed earlier. After `.contiguous()` the heads glue back into a tensor identical to the original.
 
 ### Mixing the heads with out_proj
 
@@ -2729,11 +2707,9 @@ Without position embeddings, the encoder would not know whether the snout was to
 
 Our attention module lets every patch read every other patch. It does not block any patch based on its position in the sequence.
 
-Language models need a different setup. When a model learns to predict the next token, it must not see tokens that come later in the sequence. Otherwise, it could use information that should not yet be available.
+When a model learns to predict the next token, it must not see tokens that come later in the sequence. Otherwise, it could use information that should not yet be available. Language models solve this with an **attention mask**. Thee mask blocks attention to future tokens by changing their scores before softmax.
 
-Language models solve this with an **attention mask**. The mask blocks attention to future tokens by changing their scores before softmax.
-
-An image encoder does not have the same requirement. The patches are parts of an image, not a sequence in which later patches must be hidden. Every patch can use information from the entire image.
+An image encoder does not have the same requirement, the patches are parts of an image, not a sequence in which later patches must be hidden. Every patch can use information from the entire image.
 
 That is why our encoder does not need a causal attention mask.
 
@@ -3036,6 +3012,10 @@ The ViT paper studied how far different attention heads look across an image. So
 In layer 0, the eye patch focuses mostly on itself and its neighbors. In layer 13, attention goes to other parts of the dog's head. In layer 26, the attention spreads across the dog's head and body rather than the surrounding grass.
 
 This is the information exchange we wanted to build. **A patch containing brown fur could belong to a dog, a bear, or a carpet. After attention, the patch can use information from the rest of the image to build a more useful representation of the fur**.
+
+#### What an attention map does not tell us
+
+A weight says how much of a value was mixed in, not how useful that value was. The sink patches are the clearest case: they take a large share of the eye's attention while carrying little visual information, these patches mix as they go. After layer 0, the vector at each position already holds information gathered from other patches, so in layer 26 a weight on a position is not a weight on that square of the photo alone. Attention is only one part of each layer. Its output passes through `out_proj`, the shortcut carries the patch's own vector around it, and the MLP changes the result again. On top of that we averaged over 16 heads, which blurs heads that look in different directions.
 
 ### Where the new pieces sit
 
