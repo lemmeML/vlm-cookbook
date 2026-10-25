@@ -3953,7 +3953,7 @@ Roughly 2.9 billion, this is what "**3b**" in the model name represents.
 
 It is about 11,693,865,920 bytes or **11.7 GB** in `float32`.
 
-![parameter map](ch7-parameter-map.svg)
+![parameter map](fig/ch7-parameter-map.svg)
 (the bars are drawn to scale, except for the projector, which would be half a pixel wide).
 
 
@@ -4103,7 +4103,7 @@ The last step uses `torch.where` to set every padding position to zero.
 
 Before inserting the image vectors, the code also divides them by $\sqrt{2048}$.
 
-![merging image and text](vlm-book/fig/ch-7/ch7-merging-image-and-text.svg)
+![merging image and text](fig/ch7-merging-image-and-text.svg)
 
 (The figure shows 6 of the 256 image positions and 6 of the 2048 numbers in each vector).
 
@@ -4277,7 +4277,7 @@ Without weight tying, the model would have $2,923,466,480+526,778,368=3,450,244,
 
 It also explains why our tensor count did not include a separate output layer. The checkpoint stores the shared matrix only once, under `embed_tokens`.
 
-![weight tying](vlm-book/fig/ch-7/ch7-weight-tying.svg)
+![weight tying](fig/ch7-weight-tying.svg)
 
 (The figure shows 8 of the 257,216 rows and 8 of the 2048 numbers in each row. The bar lengths are drawn by hand for a vector h representing "dog")
 
@@ -4355,7 +4355,7 @@ The shared matrix is ready. We have not built those layers yet.
   language model         not built yet, its lm_head will share embed_tokens
 ```
 
-![ch7 so far](ch7-so-far.svg)
+![ch7 so far](fig/ch7-so-far.svg)
 
 **The dog photo goes through the vision tower and comes out as 256 vectors of 1152 numbers. The projector resizes each one to 2048 numbers, and the merge divides them by $\sqrt{2048}$ and drops them, in order, into the 256 seats that were empty at the end of the last chapter. Below them, `embed_tokens` turns `<bos>`, the 8 prompt tokens and the newline into vectors. The two new pieces add 2,361,344 and 526,778,368 parameters.**
 
