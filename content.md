@@ -3060,91 +3060,93 @@ In the next chapter, we build the **processor**. It will prepare an image in exa
 
 # Chapter 6. Preparing the Image and the Question
 
-At the end of the last chapter our vision encoder was complete. All 27 layers ran real attention using the trained weights, and the dog photo came out as 256 vectors that matched Hugging Face's implementation. But two things were still missing.
+At the end of the last chapter our vision encoder was complete, all 27 layers ran real attention using the trained weights, and the dog photo came out as 256 vectors that matched Hugging Face's implementation. But two things were still missing.
 
-We fed the encoder `pix`, resized the image and used a few lines of arithmetic to prepare it.  But the encoder is only half of the model. The language model on the other side reads token ids, not pictures. Nothing turns our question into ids yet, and we have not made room in the question's sequence for the picture.
+We fed the encoder `pix`, which we prepared by resizing the image and applying arithmetic to prepare it. But the encoder is only half of the model, the language model on the other side reads token IDs, not pictures. Nothing turns our question into IDs yet, and we have not made room in the question's sequence for the picture.
 
-In this chapter we build the **Processor**. The code that runs before the model and prepares both inputs.
+In this chapter we build the **processor**, the code that runs before the model and prepares both inputs.
 
-> **Main Idea: The processor converts a photo into the exact tensor the encoder was trained on, and coverts the question into token IDs and reserves one empty seat for every image patch.**
+> **Main Idea: The processor converts a photo into the exact tensor the encoder was trained on, coverts the question into token IDs and reserves one empty seat for every image patch.**
 
 Think of the model's input as one long row of seats in a theater. Before the show, the Processor does two jobs. First, it prepares every image so that it arrives in the same format. And second, it creates the same chart. The first 256 seats are reserved for the image patches and the rest for the words of your question.
 
 ### What a processor does
 
-A processor has no learned weights. It follows a fixed recipe of steps before the model sees anything. Since nothing in the processor learns, training cannot improve it.
+A processor has no learned weights, it follows a fixed recipe of steps before the model sees anything. Since nothing in the processor learns, training cannot improve it.
 
-During training, millions of images and prompts passed through a processor before reaching the model. The model's weights adapt to the exact values that came out of the processor. If our processor resizes images differently, scales pixel values differently or formats the prompt differently, the model receives numbers it has never seen.
+During training millions of images and prompts passed through a processor before reaching the model. The model's weights adapted to the exact values that came out of the processor. If our processor resizes images differently, scales pixel values differently or formats the prompt differently, the model receives numbers it has never seen.
 
-The problem is that nothing crashes when that happens. The tensor shapes can still be correct, and the code can still run. The answers gets worse without any obvious errors. We saw a similar silent mistake earlier when we left out `eps` in `nn.LayerNorm` (in chapter 3) and the model still loaded and ran, but with PyTorch’s default `1e-5` instead of the `1e-6` it was trained with. Here we can check each step against the official recipe.
+The problem is that nothing crashes when that happens, the tensor shapes can still be correct and the code can still run, while the answers gets worse without any obvious error. We saw a similar silent mistake in chapter 3, when we left out `eps` in `nn.LayerNorm`, the model still loaded and ran, but with PyTorch’s default `1e-5` instead of the `1e-6` it was trained with. This time we can check each step against the official recipe.
 
-The processor takes two inputs, a photo and a prompt, and returns three tensors:
+The processor takes two inputs, a photo and a prompt and returns three tensors:
 
 - `pixel_values` contains the image as numbers. Its shape is $[B, 3, 224, 224]$: $B$ images, 3 color channels, 224 rows and 224 columns of pixels.
-- `input_ids` contains the prompt as token IDs. Its shape is $[B, T]$: $B$ prompts, each containing $T$ tokens. Of these tokens, 256 positions are reserved for the image.
+- `input_ids` contains the prompt as token IDs. Its shape is $[B, T]$: $B$ prompts, each containing $T$ tokens. 256 of these positions are reserved for the image.
 - `attention_mask` has shape $[B, T]$. It marks which token IDs represent real tokens and which are only padding.
 
-The two sides work independently. The image side does not look at the text, and the text side does not look at the pixels. They come together only in the dictionary returned by the processor.
+The two sides work independently, the image side does not look at the text, and the text side does not look at the pixels. They come together only in the dictionary returned by the processor.
 
 ![Figure Processor Overview](fig/ch6-processor-overview.svg)
 
-A photo and a prompt enter the processor; the image side and the text side runs separately. The processor returns `pixel_values, input_ids` and `attention_mask`.
+A photo and a prompt enter the processor, the image side and the text side run separately and the processor returns `pixel_values, input_ids` and `attention_mask`.
 
 
 ### Why every image must become 224 by 224
 
-Our dog photo is 3000 pixels wide and 3000 pixels tall. That is 9,000,000 pixels. With three numbers per pixel, the image consists of 27 million numbers.
+Our dog photo is 3000 pixels wide and 3000 pixels tall, which makes 9,000,000 pixels. With three numbers per pixel, that is 27 million numbers.
 
-The patch convolution from chapter 2 could accept it. A convolution slides its window across the input, regardless of its size. In it, “When windows overlap”, we counted the windows along one side as $$\lfloor (H - K)/S \rfloor + 1$$
+The patch convolution from chapter 2 could accept it, because a convolution slides its window across the input regardless of its size. We counted the windows along one side as $$\lfloor (H - K)/S \rfloor + 1$$
 With $H = 3000$ and 14 pixel patches ($K = S = 14$)
-gives $\lfloor 2986 / 14 \rfloor + 1 = 213 + 1 = 214$ windows.
+this gives $\lfloor 2986 / 14 \rfloor + 1 = 213 + 1 = 214$ windows.
 
-Since $214 \times 14 = 2996$. The last 4 pixels are dropped, the leftover strip that “Counting patches” warned about. That makes $214^2 = 45{,}796$ patches.
+Since $214 \times 14 = 2996$, the last 4 pixels are dropped,
+which makes $214^2 = 45{,}796$ patches.
 
-But two things would break here.
+Two things would break here.
 
-The first is the position table. In there we built this table using with `num_positions = num_patches`, so it has exactly one row for each position, giving the real model 256 rows.
-The table produces an output with the shape $[1, 256, 1152]$, which we add to the patch vectors. But we cannot add 45,796 patch vectors to just 256 position vectors. PyTorch would stop with an error because their shapes do not match.
+The first is the position table, We built it with `num_positions = num_patches`, so it has exactly one row per patch position: 256 rows for the real model.
+The table produces an output of shape $[1, 256, 1152]$, which we add to the patch vectors, But we cannot add 45,796 patch vectors to just 256 position vectors. PyTorch would give an error because their shapes do not match.
 
-The second problem is computational cost. Attention compares every patch with every patch, with 45,796 patches, one attention head would compute $45{,}796^2 \approx 2.1$ billion scores in every layer.
+The second problem is computational cost, attention compares every patch with every other patch, so with 45,796 patches one attention head would compute $45{,}796^2 \approx 2.1$ billion scores in every layer.
 
-Using a smaller image does not solve the problem either. A 448 by 448 image produces $448 / 14 = 32$ patches per side and $32^2 = 1024$ patches, still four times as many as the model's 256 position vectors.
+Using a smaller image does not solve the problem either, a $448\times448$ image produces $448 / 14 = 32$ patches per side and $32^2 = 1024$ patches, which is still four times the model's 256 position vectors.
 
 The solution is to resize every photo to the exact size used during training: $224 \times 224$. This gives us $224 / 14 = 16$ patches along each side and $16 \times 16 = 256$ patches in total. Each patch now has a matching row in the position table.
 
-Resizing does not preserve the original proportions. A wide photo gets squeezed sideways to fit the square, while a tall one gest squeezed from top to bottom. PaliGemma, the vision language model whose weights we load, was trained using this resizing method, so we follow the same method. Other models may crop the center of the photo or add a border instead. Each model has its own processing recipe.
+Resizing does not preserve the original proportions, a wide photo gets squeezed sideways to fit the square, and a tall one gets squeezed from top to bottom. PaliGemma, the vision language model whose weights we load, was trained with this resizing method, so we use it too. Other models crop the center of the photo or add a border instead, each model has its own recipe.
 
-PaliGemma also comes in versions trained on 448 and 896 pixel images. These versions have larger position tables with 1024 and 4096 rows, and their processors resize images to 448 or 896 pixels. Everything stays the same, only the size changes.
+PaliGemma also comes in versions trained on 448 and 896 pixel images. These versions have larger position tables with 1024 and 4096 rows, and their processors resize images to 448 or 896 pixels. Everything else stays the same, only the size changes.
 
 ![preparing the image](fig/ch6-image-preprocessing.svg)
 
 
 ### Resizing a photo
 
-Shrinking 3000 pixels down to 224 means that each new pixel must represent many pixels from the original image. Along one side that is $3000 / 224 \approx 13.4$ old pixels for every new pixel. Each new pixel covers an area of about $13.4 \times 13.4 \approx 179$ old pixels.
+Shrinking 3000 pixels down to 224 means that each new pixel must represent many pixels from the original image. Along one side that is $3000 / 224 \approx 13.4$ old pixels for every new pixel, so each new pixel covers an area of about $13.4 \times 13.4 \approx 179$ old pixels.
 
-But how do we calculate the color of each new pixel? There are several ways to do this. The general term **Resampling**: computing new pixel values from original pixels.
+*How do we calculate the color of each new pixel?*
+There are several ways, and the general term for them is **resampling**: computing new pixel values from the original pixels.
 
-Here is an example in one dimension. Suppose we have four pixel values, $[10, 20, 30, 40]$, and we want to shrink them to two pixels.
+For example, Suppose we have four pixel values $[10, 20, 30, 40]$ and we want to shrink them to two pixels.
 
 **Nearest neighbor** selects one original pixel for each new pixel and discards the others. In this example it might keep $[10, 30]$.
 
-**Averaging** calculates the average of the original pixels covered by each new pixel. The results are
+**Averaging** calculates the average of the original pixels covered by each new pixel.
 
-$\frac{10 + 20}{2} = 15$ and $\frac{30 + 40}{2} = 35$, giving $[15, 35]$.
+The results are:
+$$\frac{10 + 20}{2} = 15~~\text{and}~~\frac{30 + 40}{2} = 35\text~~{giving}~~[15, 35]$$
 
-**Bilinear** and **Bicubic** resampling use weighted averages. Each new pixel combines nearby original pixels, but the pixels do not all contribute equally. The closest pixels receive the greatest weights and the weights follow a smooth curve. Bilinear resampling uses straight lines to calculate the weights, while bicubic resampling uses a cubic curve that helps keep edges sharper.
+**Bilinear** and **bicubic** resampling use weighted averages, where each new pixel combines nearby original pixels but the pixels do not all contribute equally. The closest pixels receive the largest weights, and the weights follow a smooth curve. Bilinear resampling uses straight lines to calculate the weights while bicubic resampling uses a cubic curve that helps keep edges sharper.
 
-Nearest neighbor is fast, but it can cause problems when an image is heavily reduced. If we shrink by a factor of about 13, it keeps only one of roughly 179 original pixels and ignores the rest. Fine details, such as fur or a fence, can turn into coarse patters that were not present in the original image. This effect is called **aliasing**. 
+Nearest neighbor is fast, but it can cause problems when an image is heavily reduced. If we shrink by a factor of about 13, it keeps only one of roughly 179 original pixels and ignores the rest. Fine details such as fur or a fence, can turn into coarse patterns that were not in the original image, an effect called **aliasing**. 
 
-**PIL**, the Python imaging library we use, helps prevent this problem. When it shrinks an image, it stretches the weighting curve so that every original pixel covered by a new pixel contributes to the result.
+**PIL**, the Python Imaging Library we use, avoids this problem: when it shrinks an image, it stretches the weighting curve so that every original pixel covered by a new pixel contributes to the result.
 
-Our processor uses bicubic resampling, through `Image.Resampling.BICUBIC`. PaliGemma's training images were resized this way, so we use the same method. However, two libraries can both use bicubic resampling and still produce slightly different pixels. They may round values differently or use slightly different weighing curves. We will see this difference in a moment and make it disappear at the end of the chapter.
+Our processor uses bicubic resampling through `Image.Resampling.BICUBIC`, because PaliGemma's training images were resized this way. So we use the same method, however, two libraries can both use bicubic resampling and still produce slightly different pixels, because they may round values differently or use slightly different weighing curves. We will see this difference in a moment and make it disappear at the end of the chapter.
 
 ![Figure Resampling](fig/ch6-resampling.svg)
 
-The row $[10, 20, 30, 40]$ shrinks to 2 pixels three ways: nearest neighbor keeps $[10, 30]$, averaging gives $[15, 35]$, bicubic resampling uses a smooth weight curve across neighboring pixels. The lower example shows a fine stripe pattern reduced by a factor of 13. Nearest neighbor produces false wide stripes while PIL's stretched curve produces a smoother gray result.
-
+The row $[10, 20, 30, 40]$ shrinks to 2 pixels three ways: nearest neighbor keeps $[10, 30]$, averaging gives $[15, 35]$ and bicubic resampling uses a smooth weight curve across neighboring pixels. The lower example shows a fine stripe pattern reduced by a factor of 13. Nearest neighbor produces false wide stripes, while PIL's stretched curve produces a smoother gray result.
 
 ### From a picture to numbers
 
@@ -3718,7 +3720,7 @@ That is the point where a picture becomes the part of a sentence.
 
 # Chapter 7. Putting the Picture into the Sentence
 
-At the end of the last chapter the processor had finished its job. It turned the dog photo into `pixel_values` and the question into 266 token IDs: **256** reserved image positions, `<bos>`, **8** prompt tokens and a newline.
+At the end of the last chapter the processor had finished its job, It turned the dog photo into `pixel_values` and the question into 266 token IDs: **256** reserved image positions, `<bos>`, **8** prompt tokens and a newline.
 
 The vision encoder turns the pixels into 256 vectors, each with 1152 numbers. But the language model expects vectors with 2048 numbers. The image vectors also need to go into the positions reserved for them.
 
@@ -3741,7 +3743,7 @@ The code uses the vision encoder classes `VisionConfig` and `VisionModel` from c
 
 ### The config of the whole model
 
-In chapter 2 `VisionConfig` held the settings of the vision encoder. PaliGemma stores the settings of the whole model in `config.json`: one configuration for the vision side, one for the text side, and a few shared settings, we create two classes to hold these settings.
+In chapter 2 `VisionConfig` held the settings of the vision encoder. PaliGemma stores the settings of the whole model in `config.json`: one configuration for the vision side, one for the text side, and a few shared settings. We create two classes to hold these settings.
 
 **`TextConfig`** stores the settings of the language model, three fields matter most: `vocab_size` (the number of rows in the embedding table), `hidden_size` (the length of each text vector, 2048) and `pad_token_id`(the ID used for padding).
 
@@ -3947,11 +3949,11 @@ The whole model has:
 
 $$412{,}442{,}352 + 2{,}361{,}344 + 526{,}778{,}368 + 1{,}981{,}884{,}416 = 2{,}923{,}466{,}480 ~\text{parameters}$$
 
-Roughly 2.9 billion, this is what "**3b**" in its name represents.
+Roughly 2.9 billion, this is what "**3b**" in the model name represents.
 
-This is about 11,693,865,920 bytes (11.7 GB) in `float32`.
+It is about 11,693,865,920 bytes or **11.7 GB** in `float32`.
 
-![parameter map](fig/ch7-parameter-map.svg)
+![parameter map](ch7-parameter-map.svg)
 (the bars are drawn to scale, except for the projector, which would be half a pixel wide).
 
 
@@ -4101,7 +4103,7 @@ The last step uses `torch.where` to set every padding position to zero.
 
 Before inserting the image vectors, the code also divides them by $\sqrt{2048}$.
 
-![merging image and text](fig/ch7-merging-image-and-text.svg)
+![merging image and text](vlm-book/fig/ch-7/ch7-merging-image-and-text.svg)
 
 (The figure shows 6 of the 256 image positions and 6 of the 2048 numbers in each vector).
 
@@ -4167,11 +4169,11 @@ The final tensor has shape`[1, 266, 2048]`, ready for the language model.
 In the **batch** the shorter prompt`"caption en"` contains two tokens, `caption` and `▁en`.
 It needs $256 + 1 + 2 + 1 = 260$ positions for the image, `<bos>`, the two text tokens and the newline.
 
-Padding adds $266 - 260 = 6$ positions to the longer prompt.
+Padding adds $266 - 260 = 6$ positions to the shorter prompt so it matches the longer prompt.
 
 The output confirms that there are 6 padding tokens and 6 all-zero rows. The batch contains $2 \cdot 266 = 532$ vectors in total. **512** image vectors, $10 + 4 = 14$ text vectors and **6** padding vectors.
 
-For **padding** Our example in chapter 6 put padding at the end, but PaliGemma's tokenizer uses **left padding**. The shorter sequence begins with 6 `<pad>` tokens, so its image positions start at position 6. `masked_scatter` handles this automatically, it walks through the batch in order, filling the first sequence's image positions and then the second's.
+For **padding**, our example in chapter 6 put padding at the end, but PaliGemma's tokenizer uses **left padding**. The shorter sequence begins with 6 `<pad>` tokens, so its image positions start at position 6. `masked_scatter` handles this automatically, it walks through the batch in order, filling the first sequence's image positions and then the second's.
 
 Left padding also keeps the newline in the final position of every sequence. This will matter when the model generates its answer.
 
@@ -4275,7 +4277,7 @@ Without weight tying, the model would have $2,923,466,480+526,778,368=3,450,244,
 
 It also explains why our tensor count did not include a separate output layer. The checkpoint stores the shared matrix only once, under `embed_tokens`.
 
-![weight tying](fig/ch7-weight-tying.svg)
+![weight tying](vlm-book/fig/ch-7/ch7-weight-tying.svg)
 
 (The figure shows 8 of the 257,216 rows and 8 of the 2048 numbers in each row. The bar lengths are drawn by hand for a vector h representing "dog")
 
@@ -4353,7 +4355,7 @@ The shared matrix is ready. We have not built those layers yet.
   language model         not built yet, its lm_head will share embed_tokens
 ```
 
-![ch7 so far](fig/ch7-so-far.svg)
+![ch7 so far](ch7-so-far.svg)
 
 **The dog photo goes through the vision tower and comes out as 256 vectors of 1152 numbers. The projector resizes each one to 2048 numbers, and the merge divides them by $\sqrt{2048}$ and drops them, in order, into the 256 seats that were empty at the end of the last chapter. Below them, `embed_tokens` turns `<bos>`, the 8 prompt tokens and the newline into vectors. The two new pieces add 2,361,344 and 526,778,368 parameters.**
 
@@ -4366,3 +4368,5 @@ But nothing reads this sequence yet, before we build the language model, we need
 **How do we avoid repeating work?** When generating each new token, the model should not process all $266$ prompt positions again. Those positions have not changed.
 
 In the next chapter, we will build the attention mask, which controls which positions each token can attend to, and the cache, which lets the model reuse its previous work.
+
+---
