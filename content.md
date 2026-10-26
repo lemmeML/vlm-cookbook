@@ -3712,44 +3712,50 @@ That is the point where a picture becomes part of a sentence.
 
 # Chapter 7. Putting the Picture into the Sentence
 
-At the end of the last chapter the processor had finished its job, It turned the dog photo into `pixel_values` and the question into 266 token IDs: **256** reserved image positions, `<bos>`, **8** prompt tokens and a newline.
+At the end of the last chapter the processor had finished its job, it turned the dog photo into `pixel_values` and the question into 266 token IDs. **256** were reserved for image positions, one for `<bos>`, **8** for prompt tokens and one for new newline.
 
-The vision encoder turns the pixels into 256 vectors, each with 1152 numbers. But the language model expects vectors with 2048 numbers. The image vectors also need to go into the positions reserved for them.
+The vision encoder turns the pixels into 256 vectors, each with 1152 numbers, but the language model expects vectors of 2048 numbers, and the image vectors also need to go into the positions reserved for them.
 
 In this chapter, we connect the vision encoder to the language model and place the image vectors in the correct positions.
 
 > **Main Idea: A single linear layer converts each image vector from 1152 numbers to 2048. We then place the 256 vectors, in order, into the 256 reserved image positions. Each text token keeps its own position.**
 
-Let's return to our theater example from the last chapter. Every seat is designed for a guest carrying 2048 numbers, but each image guests arrive with only 1152. First we resize them, then an usher places them in the 256 reserved seats, one after another. The text guests take the seats assigned to their tokens.
-
+Let's return to our theater example where every seat was designed for a guest carrying 2048 numbers, but each image guests arrive with only 1152. First we resize them, then an usher places them in the 256 reserved seats, one after another. The text guests take the seats assigned to their tokens.
 
 Our vision language model has three main parts:
 
-- **Vision tower**, which is the vision encoder we built in chapters 2 to 5.
-- **Multimodal projector**, which connects the vision tower to the language model. We build it in this chapter.
+- **The Vision tower**, the vision encoder built in the earlier chapters.
+- **The Multimodal projector**, which connects the vision tower to the language model, we build it in this chapter.
 - **The Language Model**, which processes the combined sequence and generates the answer.
 
-We will build the language model later, but we need one of its components now: the embedding table, which converts token IDs into vectors. We load three parts from the real **PaliGemma** checkpoint: the vision tower, the projector and the embedding table. Together they are enough to build the complete input sequence.
+We will build the language model later, but we need one of its components now, the embedding table, which converts token IDs into vectors. From the real PaliGemma checkpoint we load three parts, the vision tower, the projector and the embedding table, which together are enough to build the complete input sequence.
 
-The code uses the vision encoder classes `VisionConfig` and `VisionModel` from chapters 2 to 5, and `dog` photo, `prompt`, `processor`, `tokenizer` and `inputs` from chapter 6.
+The code uses the vision encoder classes `VisionConfig` and `VisionModel`, the `dog` photo, `prompt`, `processor`, `tokenizer` and `inputs`, which we have already built earlier.
 
 ### The config of the whole model
 
-In chapter 2 `VisionConfig` held the settings of the vision encoder. PaliGemma stores the settings of the whole model in `config.json`: one configuration for the vision side, one for the text side, and a few shared settings. We create two classes to hold these settings.
+The `VisionConfig` held the settings of the vision encoder, PaliGemma store the settings of the whole model in `config.json`. One configuration for the vision side, one for the text side, and a few shared settings. We create two classes to hold these settings.
 
-**`TextConfig`** stores the settings of the language model, three fields matter most: `vocab_size` (the number of rows in the embedding table), `hidden_size` (the length of each text vector, 2048) and `pad_token_id`(the ID used for padding).
+**`TextConfig`** stores the settings of the language model.
 
-**`VLMConfig`** holds both configurations and the shared settings: `image_token_index` (the ID of `<image>`), `projection_dim` (the length of an image vector after projection, 2048), `hidden_size` (also 2048, used to scale the image vectors later) and `pad_token_id`.
+Three fields matter most,
+`vocab_size`: the number of rows in the embedding table
+`hidden_size`: the length of each text vector, 2048, and
+`pad_token_id`: the ID used for padding.
 
-The last five lines connect the two configurations, First we build the vision configuration. Then we pass the shared `pad_token_id` to the text configuration so the embedding table knows which row belongs to `<pad>`. We also calculate the number of image tokens:
+**`VLMConfig`** holds both configurations and the shared settings: `image_token_index` (the ID of `<image>`), `projection_dim` (2048, its the length of an image vector after projection), `hidden_size` (2048, used to scale the image vectors later) and `pad_token_id`.
+
+The last five lines of `VLMConfig` connect the two configurations. We build the vision configuration, then we pass the shared `pad_token_id` to the text configuration so the embedding table knows which row belongs to `<pad>`, we also calculate the number of image tokens:
 
 $$N_{\text{image}} = \left(\frac{224}{14}\right)^2 = 16^2 = 256$$
 
-Finally, we copy `projection_dim` into the vision configuration because the projector reads both dimension from there.
+We copy `projection_dim` into the vision configuration because the projector reads both dimension from there.
 
-The default values are just fallbacks, actual values come from `config.json`. The defaults `image_token_index=256000` and `vocab_size=257152` are replaced. Like `VisionConfig`, each class uses `**kwargs` to ignore extra fields in the file.
+The default values are only fallbacks, the actual values come from `config.json`, which replaces defaults such as `image_token_index=256000` and `vocab_size=257152`. Like `VisionConfig`, each class uses `**kwargs` to ignore extra fields in the file.
 
-The first lines of code free memory used by earlier chapters. `siglip`, the trained encoder from chapter 5, holds 412,442,352 parameters. At 4 bytes each that's 1,649,769,408 bytes, about 1.6 GB, and the `state` variable holds another copy. `globals().pop(name, None)` removes each object, and `gc.collect()` asks PyTorch to frees the memory.
+`siglip` holds 412,442,352 parameters, at 4 bytes each that's 1,649,769,408 bytes, or about 1.6 GB, and the `state` variable holds another copy.
+
+`globals().pop(name, None)` removes each object, and `gc.collect()` frees the memory (`gc` is Python’s garbage collector).
 
 ```python
 import gc, json
@@ -3758,7 +3764,7 @@ import torch.nn as nn
 from huggingface_hub import hf_hub_download, get_safetensors_metadata
 from safetensors import safe_open
 
-for name in ("ref", "siglip", "vit", "state", "official"):           # free memory held by earlier chapters
+for name in ("ref", "siglip", "vit", "state", "official"): # free memory held by earlier chapters
     globals().pop(name, None)
 gc.collect()
 
@@ -3843,31 +3849,35 @@ text:   hidden 2048, layers 18, heads 8, kv heads 1, vocab 257216
 image_token_index 257152, pad_token_id 0, projection_dim 2048
 ```
 
-**Vision side:** Hidden size is 1152, with 27 layers, 16 attention heads and patch size 14. These match `real`, the configuration we wrote by hand in chapter 5. The 256 image tokens are the $16^2$ we just computed.
+**Vision side:** Hidden size is 1152, with 27 layers, 16 attention heads and patch size 14. The 256 image tokens are the $16^2$ tokens we computed by hand above.
 
 **Text side:** Each text vector has 2048 numbers. The language model has 18 layers, 8 attention heads and 1 key-value head.
 
-**Shared settings:** The image token ID is 257,152, which is the ID assigned to `<image>` in previous chapter. The padding token ID is 0. The projector outputs 2048 numbers, matching the text hidden size. Both types of vectors must have the same length to share one sequence.
+**Shared settings:** The image token ID is 257,152, which is the ID assigned to `<image>`. The padding token ID is 0, the projector outputs 2048 numbers, matching the text hidden size, because both types of vectors must have the same size to share one sequence.
 
 **Vocabulary:** The tokenizer has 257,153 tokens, but the embedding table has 257,216 rows. 
 
-That is $257{,}216 - 257{,}153 = 63$ more. No token ID points to them, so they are never used. Notice that $257{,}216 = 64 \cdot 4{,}019$.
+$$257{,}216 - 257{,}153 = 63~\text{more}$$
 
-The table size is a multiple of 64. One common reason for this is performance: **GPUs can process matrices more efficiently when their dimensions are aligned to certain sizes**.
+No token ID points to the extra rows, so they are never looked up.
 
-The unused rows cost $63 \cdot 2048 = 129{,}024$ parameters. That is a small overhead.
+Notice that $257{,}216 = 64 \cdot 4{,}019$, the table size is a multiple of 64.
+
+One common reason for this is performance: **GPUs can process matrices more efficiently when their dimensions are aligned to certain sizes**.
+
+The unused rows cost $63 \cdot 2048 = 129{,}024$ parameters, a small overhead.
 
 ### Loading the three pieces
 
 #### The projector
 
-A single linear layer that converts 1152 numbers to 2048:
+The projector is a single linear layer that converts 1152 numbers to 2048:
 
 $$\mathbf{v}' = W_p,\mathbf{v} + \mathbf{b}_p$$
 
-here $\mathbf{v}$ is an image vector from the vision tower, $W_p$ is the weight matrix of shape $[2048, 1152]$ (PyTorch stores the output dimension first in the weight matrix), $\mathbf{b}_p$ is the bias with 2048 numbers, and $\mathbf{v}'$ is the projected vector.
+where $\mathbf{v}$ is an image vector from the vision tower, $W_p$ is the weight matrix of shape $[2048, 1152]$ (PyTorch stores the output dimension first in the weight matrix), $\mathbf{b}_p$ is the bias with 2048 numbers, and $\mathbf{v}'$ is the projected vector.
 
-Consider a small example: a projector that converts 2 numbers into 3
+Consider a small example, a projector that converts 2 numbers into 3:
 
 $$W_p = \begin{pmatrix} 1 & 0 \\ 0 & 1 \\ 1 & 1 \end{pmatrix} \qquad \mathbf{b}_p = [0, 0, 1]$$
 
@@ -3875,7 +3885,7 @@ For the input $\mathbf{v} = [1, 2]$, the output is:
 
 $$\mathbf{v}' = [1 \cdot 1 + 0 \cdot 2 + 0,; 0 \cdot 1 + 1 \cdot 2 + 0,; 1 \cdot 1 + 1 \cdot 2 + 1] = [1, 2, 4]$$
 
-Each output number depends on all the input numbers and their learned weights, plus bias.
+Each output number depends on all the input numbers through learned weights, plus a bias.
 
 As we saw in chapter 4, "The MLP module", a linear layer has $d_{\text{in}} \cdot d_{\text{out}}$ weights and $d_{\text{out}}$ biases:
 
@@ -3885,42 +3895,46 @@ As we saw in chapter 4, "The MLP module", a linear layer has $d_{\text{in}} \cdo
 |Biases|$2048$|2,048|
 |**Projector**|$2{,}359{,}296 + 2{,}048$|**2,361,344**|
 
-The same weights and biases are used for all 256 image vectors. A linear layer operates on the last dimension, so each vector is projected independently, just like in the MLP. The ear patch and the snout patch do not interact inside the projector. They have already interacted inside the vision encoder.
+The same weights and biases are used for all 256 image vectors, and a linear layer operates on the last dimension, so each vector is projected independently, just like in the MLP the ear patch and the snout patch do not interact inside the projector. They have already interacted inside the vision encoder.
 
 *Why is one linear layer enough?*
 
-The vision tower has already extracted useful image features. The projector only needs to convert those features into the language model's vector space. During training, PaliGemma learned how to read them. (Some other vision language models, such as LLaVA-1.5, use a small MLP of two linear layers to achieve this).
+The vision tower has already extracted useful image features, so the projector only needs to map them into the language model’s vector space, and during training the language model learned to read them. Some other vision language models, such as LLaVA-1.5, use a small MLP of two linear layers for this.
 
-The projector reads its dimensions from `vision_config.hidden_size` and `vision_config.projection_dim`. That is why `VLMConfig` copies `projection_dim` into the vision configuration. The layer is called `linear`to match the checkpoint.
+The projector reads its dimensions from `vision_config.hidden_size` and `vision_config.projection_dim`. That is why `VLMConfig` copies `projection_dim` into the vision configuration, the layer is called `linear`to match the checkpoint.
 
 #### What the checkpoint contains
 
-In chapter 4, "Our names against the real checkpoint", we used `get_safetensors_metadata` to read a checkpoint's names and shapes without loading its values. Large checkpoints are split across files called **shards**, and `meta.weight_map` dictionary tells us which shard contains each tensor.
+Earlier we used `get_safetensors_metadata` to read a checkpoint's names and shapes without loading its values. Large checkpoints are split across files called **shards**, and the `meta.weight_map` dictionary tells us which shard contains each tensor.
 
 Let's count the tensors we expect, with one tensor for each weight or bias:
 
-**The vision tower** has 437 tensors, as counted in chapter 5, "The Complete Encoder".
+**The vision tower** has 437 tensors.
+
 **The projector** has 2 tensors, `linear.weight` and `linear.bias`.
-**The language model** has an embedding table, 18 layers with 9 weight tensors each (4 for attention, 3 for the MLP, 2 for the norms, no biases) and a final norm, so $1 + 18 \cdot 9 + 1 = 164$.
 
-Together the three parts contains $437 + 2 + 164 = 603$ tensors, or 604 if the checkpoint also stores the vision `position_ids` buffer, but our code skips that buffer. Notice that we did have not counted an output layer for the language model. We will see why at the end of this chapter.
+**The language model** has an embedding table, 18 layers with 9 weight tensors each (4 for attention, 3 for the MLP, 2 for the norms, no biases) and a final norm, so $$1 + 18 \cdot 9 + 1 = 164$$
+Together the three parts contain$$437 + 2 + 164 = 603$$tensors, or 604 if the checkpoint also stores the vision `position_ids` buffer.
 
-The `pick(wanted)` function loads only the tensors we request. The function`wanted` checks each tensor name and returns `True` or `False`. `pick` opens only the shards containing the requested tensors, reads those tensors and convers them `float32` with `.float()`. `hf_hub_download` still downloads an entire shard the first time it is needed, even if we read only a few tensors from it.
+Notice that we have not counted an output layer for the language model. We will see why at the end of this chapter.
+
+The `pick(wanted)` function loads only the tensors we request, Its argument `wanted` is a function that checks each tensor name and returns `True` or `False`.
+`pick` opens only the shards containing the requested tensors, reads those tensors and convers them to `float32` with `.float()`. `hf_hub_download` still downloads an entire shard the first time it is needed, even if we read only a few tensors from it.
 
 #### The three pieces
 
 **Vision Tower**: The checkpoint names a tensor `vision_tower.vision_model.encoder.layers.0.self_attn.q_proj.weight`, but our `VisionModel` calls it `vision_model.encoder.layers.0.self_attn.q_proj.weight`. 
 
-The expression `k.split("vision_tower.", 1)[1]` removes the prefix.
-and `strict=True` checks that every expected tensor is present, with no unexpected tensors or shape mismatches. These are however not the same SigLIP weights. PaliGemma trained the vision encoder further. Its dimensions are unchanged, so it still has 412,442,352 parameters.
+The expression `k.split("vision_tower.", 1)[1]` removes the prefix,
+and `strict=True` checks that every expected tensor is present, with no unexpected tensors or shape mismatches. These are not the SigLIP weights from chapter 5, however PaliGemma trained the vision encoder further. Its dimensions are unchanged, so it still has 412,442,352 parameters.
 
 **The Projector**: Removing the `multi_modal_projector.` prefix gives us `linear.weight` and `linear.bias`, exactly the names our class expects.
 
-**The Embedding Table**: We create it with `nn.Embedding(257216, 2048, 0)`. The third argument, `padding_idx` is 0. This tells PyTorch that row 0 belongs to `<pad>`, so it starts at zero and it not updated during training.
+**The Embedding Table**: We create it with `nn.Embedding(257216, 2048, 0)`. The third argument `padding_idx`, is 0. This tells PyTorch that row 0 belongs to `<pad>`, so that row starts at zero and is not updated during training.
 
-We then copy the checkpoint weights into the table inside `torch.no_grad()`, this overwrites the entire table anyway.
+We then copy the checkpoint weights into the table inside `torch.no_grad()`. The copy overwrites the whole table, row 0 included.
 
-Finally, `del emb_weight` frees the temporary copy, That copy alone occupies $526{,}778{,}368 \cdot 4 = 2{,}107{,}113{,}472$ bytes, pr about **2.1 GB**.
+Finally, `del emb_weight` frees the temporary copy, which alone occupies $526{,}778{,}368 \cdot 4 = 2{,}107{,}113{,}472$ bytes, or **2.1 GB**.
 
 #### What we loaded
 
@@ -3931,9 +3945,9 @@ Finally, `del emb_weight` frees the temporary copy, That copy alone occupies $52
 |Embedding table|$257{,}216 \cdot 2048$|526,778,368|
 |**Loaded in this chapter**|$412{,}442{,}352 + 2{,}361{,}344 + 526{,}778{,}368$|**941,582,064**|
 
-These parameters occupy $941{,}582{,}064 \cdot 4 = 3{,}766{,}328{,}256$ bytes, or about 3.8 GB in `float-32`.
+These parameters occupy $941{,}582{,}064 \cdot 4 = 3{,}766{,}328{,}256$ bytes, or **3.8 GB** in `float32`.
 
-In chapter 6, "From words to tokens", we saw that a large vocabulary requires a large embedding table. Here is the cost: the table has about $526{,}778{,}368 / 412{,}442{,}352 \approx 1.28$ times as many parameters as the entire vision encoder. The projector has less than one percent as many parameters as either of them.
+We know that a large vocabulary requires a large embedding table, here the table has about $526{,}778{,}368 / 412{,}442{,}352 \approx 1.28$ times as many parameters as the entire vision encoder.
 
 The 18 decoder layers and the final norm add another 1,981,884,416 parameters.
 
@@ -3941,12 +3955,12 @@ The whole model has:
 
 $$412{,}442{,}352 + 2{,}361{,}344 + 526{,}778{,}368 + 1{,}981{,}884{,}416 = 2{,}923{,}466{,}480 ~\text{parameters}$$
 
-Roughly 2.9 billion, this is what "**3b**" in the model name represents.
+That is roughly 2.9 billion, the "**3b**" in the model name.
 
 It is about 11,693,865,920 bytes or **11.7 GB** in `float32`.
 
 ![parameter map](fig/ch7-parameter-map.svg)
-(the bars are drawn to scale, except for the projector, which would be half a pixel wide).
+(the bars are drawn to scale, except for the projector, which would be half a pixel wide.)
 
 
 ```python
@@ -4003,24 +4017,31 @@ top level names: ['language_model.model', 'multi_modal_projector.linear', 'visio
 vision tower loaded: 437 tensors
 projector loaded: ['linear.bias', 'linear.weight'] | parameters 2361344
 embedding table loaded from language_model.model.embed_tokens.weight (257216, 2048)
-
 ```
 
-Compare the first line with our count of 603, or 604 with a stored `position_ids`.
-The second line lists `language_model.model`, `multi_modal_projector.linear` and `vision_tower.vision_model`. All **437** vision tensors load with `strict=True`, so our names and shapes match. The projector loads `linear.bias` and `linear.weight`, with **2,361,344** parameters as calculated. The embedding table comes from `language_model.model.embed_tokens.weight`, with shape `(257216, 2048)`.
+This matches our count of 603, so this checkpoint does not store `position_ids`.
+
+It lists `language_model.model`, `multi_modal_projector.linear` and 
+`vision_tower.vision_model`. 
+
+All **437** vision tensors load with `strict=True`, so our names and shapes match.
+
+The projector loads `linear.bias` and `linear.weight`, with **2,361,344** parameters as calculated. 
+
+The embedding table comes from `language_model.model.embed_tokens.weight`, with shape `(257216, 2048)`.
 
 ### The dog image and the question as vectors
 
 Let's run the three components on the dog image and the question.
 
-**Text side** has `embed_tokens(input_ids)` which looks up each token ID in the embedding table. It does not perform a matrix multiplication. Each ID selects one row, turning a tensor of 
+**Text side** has `embed_tokens(input_ids)` which looks up each token ID in the embedding table. It does not perform any matrix multiplication, each ID selects one row, turning a tensor of 
 shape `[1, 266]` into `[1, 266, 2048]`.
 
 The 256 image positions all have ID 257,152, so they initially receive identical copies of the same embedding row. These are placeholders that we will replace with the projected image vectors.
 
 In the **Image side** the vision tower turns `[1, 3, 224, 224]` into `[1, 256, 1152]`, the projector then converts it into `[1, 256, 2048]`. For each vector the projector performs 
-$1152 \cdot 2048 = 2{,}359{,}296$ multiplications. Across all 256 vector, so
-$256 \cdot 2{,}359{,}296 = 603{,}979{,}776$ multiplications handeled in a single call.
+$1152 \cdot 2048 = 2{,}359{,}296$ multiplications, so across all 256 vector that is
+$256 \cdot 2{,}359{,}296 = 603{,}979{,}776$ multiplications handled in a single call.
 
 ```python
 input_ids = inputs["input_ids"]                                      # [1, 266], from chapter 6
@@ -4050,40 +4071,39 @@ The vector lengths now match, but the text and image vectors are still in separa
 
 ### Building the final sequence
 
-We create a tensor of zeros with shape $[B, T, D]$, where $B$ is the batch size, $T$ the number of positions (266) and $D$ is the vector length (2048).
+We create a tensor of zeros with shape $[B, T, D]$, where $B$ is the batch size, $T$ is the number of positions (266) and $D$ is the vector length (2048).
 
 For our prompt, the tensor contains $1 \cdot 266 \cdot 2048 = 544{,}768$ zeros. We fill it by copying the text embeddings into their positions, inserting the image vectors into the reserved image positions, and setting the padding positions to zero.
 
 #### Three masks
 
-We create three masks from the token IDs, each holding `True` or `False` for every position, with shape `[B, T]`:  `image_mask` is `True` where the `<image>` token **ID** is the  is **257,152**,
-`pad_mask` is `True` with `<pad>` ID **0**,`text_mask` is `True` everywhere else.
+We create three masks from the token IDs. Each has shape `[B, T]` and holds `True` or `False` for every position: `image_mask` is `True` where the ID is 257,152 (`<image>`), `pad_mask` is `True` where the ID is 0 (`<pad>`), and `text_mask` is `True` everywhere else.
 
-For our prompt the mask contains 256, 0 and 10 `True` values (the 10 are `<bos>`, the 8 prompt tokens and newline). Since $256 + 0 + 10 = 266$, every position belongs to exactly one mask. 
-If no padding token ID is configured, the code uses `-1` instead. No token ID matches it, so no position is marked as padding.
+For our prompt, the three masks contain 256, 0 and 10 `True` values (the 10 are `<bos>`, the 8 prompt tokens and the newline).
+Since $256 + 0 + 10 = 266$, every position belongs to exactly one mask.
+If no padding token ID is configured, the code uses `-1` instead, no token ID matches it, so no position is marked as padding.
 
-The embeddings have an extra dimension, `[B, T, D]`. The operation`unsqueeze(-1)` changes a mask's shape from `[B,T]` to `[B, T, 1]`.
-Then `expand(-1, -1, embed_dim)` stretches it to `[B, T, D]`, Each `-1` keeps the corresponding dimension unchanged. 
+The embeddings have an extra dimension, `[B, T, D]`. The operation `unsqueeze(-1)` changes a mask’s shape from `[B, T]` to `[B, T, 1]`, and `expand(-1, -1, embed_dim)` stretches it to `[B, T, D]`, where each `-1` keeps the corresponding dimension unchanged.
 
-For example, with two tokens and three numbers per vector, the $[\text{True}, \text{False}]$ becomes
+For example, with two tokens and three numbers per vector, the mask $[\text{True}, \text{False}]$ becomes
 
 $$\begin{pmatrix} \text{True} & \text{True} & \text{True} \\ \text{False} & \text{False} & \text{False} \end{pmatrix}$$
 
-`expand` does not copy the data. It uses **strides** to make each value appear 2048 times.
+`expand` does not copy any data, it sets the new dimension’s **stride** (the step in memory between neighboring elements) to 0, so the same value is read 2048 times.
 
 #### The text: `torch.where`
 
-`torch.where(mask, a, b)` selects value from `a` where the mask is `True` and from `b` where it is `False`. With the mask $[\text{True}, \text{False}, \text{True}]$, $a = [1, 2, 3]$ and $b = [0, 0, 0]$, the result is $[1, 0, 3]$. `inputs_embeds` and `final_embedding` both have shape `[1, 266, 2048]`, so their positions line up exactly. We can copy each text vector directly into its assigned position.
+`torch.where(mask, a, b)` takes value from `a` where the mask is `True` and from `b` where it is `False`. With the mask $[\text{True}, \text{False}, \text{True}]$, $a = [1, 2, 3]$ and $b = [0, 0, 0]$, the result is $[1, 0, 3]$. `inputs_embeds` and `final_embedding` both have shape `[1, 266, 2048]`, so their positions line up exactly and each text vector can be copied straight into its position.
 
 #### The image: `masked_scatter`
 
-We cannot copy image vectors in the same way. There are only 256 of them, so there is no image vector at position 260, and in a padded batch the image positions might start at a position other than 0.
+We cannot copy the image vectors that way, there are only 256 of them so there is no image vector at position 260, and in a padded batch the image positions might start at a position other than 0.
 
-`masked_scatter(mask, source)` visits the `True` positions in order and fills them with the values of `source`, also read in order. With a target $[0, 0, 0, 0]$, mask $[\text{False}, \text{True}, \text{True}, \text{False}]$ and the source $[7, 8]$, the result is $[0, 7, 8, 0]$.
+`masked_scatter(mask, source)` visits the `True` positions in order and fills them with the values of `source`, also read in order. With target $[0, 0, 0, 0]$, mask $[\text{False}, \text{True}, \text{True}, \text{False}]$ and source $[7, 8]$, the result is $[0, 7, 8, 0]$.
 
-In our sequence the 2048 numbers from patch 0 fill image position 0, patch 1 fills position 1, and patch 255 fills position 255.
+In our sequence, the 2048 numbers of patch 0 fill image position 0, those of patch 1 fill position 1, and so on up to patch 255.
 
-The counts match exactly: the expanded image mask has $256 \cdot 2048 = 524{,}288$ `True` values, and the source contains $1 \cdot 256 \cdot 2048 = 524{,}288$ numbers. This matters, because `masked_scatter` silently ignores extra source values. If the processor reserved only 255 positions instead of 256, nothing would crash, but the last patch would be dropped.
+The counts match exactly, the expanded image mask has $256 \cdot 2048 = 524{,}288$ `True` values, and the source contains $1 \cdot 256 \cdot 2048 = 524{,}288$ numbers. `masked_scatter` silently ignores extra source values and if the processor reserved only 255 positions instead of 256, nothing would crash, but the last patch would be dropped.
 
 Every value now has its place:
 
@@ -4093,13 +4113,13 @@ $$524{,}288 + 10 \cdot 2048 + 0 = 524{,}288 + 20{,}480 = 544{,}768$$
 
 The last step uses `torch.where` to set every padding position to zero.
 
-Before inserting the image vectors, the code also divides them by $\sqrt{2048}$.
+One more step happens before the image vectors go in, the code divides them by $\sqrt{2048}$, for a reason we will see later in the chapter.
 
 ![merging image and text](fig/ch7-merging-image-and-text.svg)
 
-(The figure shows 6 of the 256 image positions and 6 of the 2048 numbers in each vector).
+(The figure shows 6 of the 256 image positions and 6 of the 2048 numbers in each vector.)
 
-Let's test the merge vectors on our prompt, then on a batch with the shorter prompt `"caption en"`. The shorter prompt introduces padding.
+Let’s test the merge on our prompt, then on a batch that adds the shorter prompt `"caption en"`, which introduces padding.
 
 ```python
 def merge_input_ids_with_image_features(image_features, inputs_embeds, input_ids, config):
@@ -4155,39 +4175,43 @@ padding side: left | input_ids (2, 266)
 pad tokens: 6 | all zero rows: 6
 ```
 
-The final tensor has shape`[1, 266, 2048]`, ready for the language model.
-`torch.equal` checks whether two tensors contain exactly the same values. The results confirm that positions 0 to 255 contain the projected image vectors, divided by $\sqrt{2048}$, in patch order. Positions 256 to 265 contain the original text embeddings, and the image placeholders have been replaced.
+The final tensor has shape $[1, 266, 2048]$, ready for the language model.
+
+`torch.equal` checks whether two tensors contain exactly the same values.
+The results confirm that positions 0 to 255 contain the projected image vectors, divided by $\sqrt{2048}$, in patch order.
+
+Positions 256 to 265 contain the original text embeddings, and the image placeholders have been replaced.
 
 In the **batch** the shorter prompt`"caption en"` contains two tokens, `caption` and `▁en`.
 It needs $256 + 1 + 2 + 1 = 260$ positions for the image, `<bos>`, the two text tokens and the newline.
 
 Padding adds $266 - 260 = 6$ positions to the shorter prompt so it matches the longer prompt.
 
-The output confirms that there are 6 padding tokens and 6 all-zero rows. The batch contains $2 \cdot 266 = 532$ vectors in total. **512** image vectors, $10 + 4 = 14$ text vectors and **6** padding vectors.
+The output confirms that there are 6 padding tokens and 6 all zero rows.
+
+The batch contains $2 \cdot 266 = 532$ vectors in total. 512 image vectors, $10 + 4 = 14$ text vectors and 6 padding vectors.”
 
 For **padding**, our example in chapter 6 put padding at the end, but PaliGemma's tokenizer uses **left padding**. The shorter sequence begins with 6 `<pad>` tokens, so its image positions start at position 6. `masked_scatter` handles this automatically, it walks through the batch in order, filling the first sequence's image positions and then the second's.
 
-Left padding also keeps the newline in the final position of every sequence. This will matter when the model generates its answer.
+Left padding also keeps the newline in the final position of every sequence, which will matter when the model generates its answer.
 
 ### Why the image features are divided by √d
 
-When we build the language model, its first step will multiply every input vector by $\sqrt{d}$, where d is the hidden size:
+When we build the language model, it first multiplies every input vector by $\sqrt{d}$  ($d$ is the hidden size):
 
 $$\sqrt{2048} = \sqrt{1024 \cdot 2} = 32\sqrt{2} \approx 45.25$$
 
-This scaling comes from the original Transformer, which multiplies its embeddings by $\sqrt{d}$.
-Gemma follows the same convention.
+This scaling comes from the original Transformer, which multiplies its embeddings by $\sqrt{d}$,
+Gemma follows the same convention. The language model multiplies every vector, whether it represents an image or text. In PaliGemma's original implementation, the scaling happens during the text embedding lookup, so only text vectors are scaled. Our implementation, like Hugging Face scales the entire sequence at once.
 
-The language model multiplies every vector, whether it represents an image or text.
-In PaliGemma's original implementation, the scaling happens during the text embedding lookup, so only text vectors are scaled. Our implementation, like Hugging Face's, scales the entire sequence at once.
-
-To compensate, we divide the image vectors by $\sqrt{d}$ during the merge. The language model then multiplies them by the same factor, cancelling the division:
+To compensate we divide the image vectors by $\sqrt{d}$ during the merge, the language model then multiplies them by the same factor, cancelling the division:
 
 $$\frac{\mathbf{v}'}{\sqrt{d}} \cdot \sqrt{d} = \mathbf{v}'$$
 
-Here $\mathbf{v}'$ is the projector's output. With $d = 4$, $\sqrt{d} = 2$: the projector's $[2, 4]$ is stored as $[1, 2]$ and multiplied by 2 to get back to $[2, 4]$.
+Here $\mathbf{v}'$ is the projector's output, with $d = 4$, $\sqrt{d} = 2$, the projector's $[2, 4]$ is stored as $[1, 2]$ and multiplied by 2 to get back to $[2, 4]$.
 
-A vector's length is the square root of the sum of its squared values, the $∣a∣$ we discussed in chapter 1, "Embedding vectors". Function `norm(dim=-1)` calculates this length for every vector.
+A vector's length is the square root of the sum of its squared values, which is $∣a∣$ ,
+`norm(dim=-1)` calculates this length for every vector.
 
 We compare the average length of text vectors after scaling, merged image vectors after scaling, and image vectors straight from the projector.
 
@@ -4212,31 +4236,27 @@ average length, image token as the language model sees it: 47.29
 average length, image token straight out of the projector: 47.29
 ```
 
-The average image vector length is 47.29 in both, this confirms that the image vector reach the language model at the scale produced by the projector. The text vectors have an average length of 267.56 after scaling. Before scaling their average length is about $267.56 / 45.25 \approx 5.91$
+The average image vector length is 47.29 in both, this confirms that the image vector reach the language model at the scale produced by the projector. The text vectors have an average length of 267.56 after scaling. Before scaling their average length was about $267.56 / 45.25 \approx 5.91$
 
 So the text vectors remains about $267.56 / 47.29 \approx 5.7$ times longer than the image vectors.
-The division does not make the image and text vectors equal in length. It keeps the image vectors at the scale used during training.
+The division does not make the image and text vectors equal in length, it keeps the image vectors at the scale used during training.
 
-Without the division, an image vector would reach the language model with an average length of about $47.29 \cdot 45.25 \approx 2{,}140$. That is 45 times its intended length.
+Without the division an image vector would reach the language model with an average length of $47.29 \cdot 45.25 \approx 2{,}140$, which is 45 times its intended length.
 
-We have discussed in earlier chapters that normalization rescales the copy entering a sublayer, while the residual stream keeps its own values and receives a correction from each layer. If the stream is much larger than those corrections, the corrections have less influence. Nothing would crash, but the answers could get worse, much like when we used the wrong `eps` in chapter 3.
-
-So now we know that **we divide the image vectors by** $\sqrt{d}$ **because the language model will multiply them by the same factor.**
+We know that normalization rescales the copy entering a sublayer, while the residual stream keeps its own values and receives a correction from each layer. If the stream is much larger than those corrections, the corrections have little influence.
 
 ### Weight tying
 
-The embedding table has another job at the other end of the language model.
+The embedding table has another job at the other end of the language model. A language model produces a score for every token in its vocabulary, these scores are called **logits**.
 
-In the section "How CLIP turns this into a loss" in chapter 1 we saw that a language model produces a score for every token in its vocabulary, the scores are called **logits**.
-
-The layer that produces them is the **language modeling head**, or `lm_head`. It is a linear layer that converts 2048 numbers into 257,216 scores, one for each vocabulary row. It has no bias, so its weight contains
+The layer that produces them is the **language modeling head**, or `lm_head`. It is a linear layer without a bias that converts 2048 numbers into 257,216 scores, one for each vocabulary row, so its weight contains:
 
 $$2048 \cdot 257{,}216 = 526{,}778{,}368 \text{ parameters}$$
 
-Its weight has shape `[257216, 2048]`, the same as the embedding table. Let's call the embedding matrix $E$, with one row per token.
+Its weight has shape `[257216, 2048]`, same as the embedding table.
 
+Let's call the embedding matrix $E$, with one row per token.
 **Going in:** Token ID $i$ selects row $i$ from $E$. This is a lookup, not a multiplication.
-
 **Coming out:** The head compares the final vector $h$ with every row of $E$:
 
 $$z_j = \mathbf{e}_j \cdot \mathbf{h} \qquad \text{for every row } j$$
@@ -4245,13 +4265,13 @@ $\mathbf{e}_j$ is the row of token $j$, $\mathbf{h}$ is the vector from the fina
 
 **Weight tying** means using the same matrix for both operations. The row representing "dog" when we look up a token is also the row used to score "dog" when generating the next token. If the final vector points strongly in the direction of the dog row, "dog" receives a high score.
 
-A small example with three tokens and vectors of two numbers:
+Here is a small example with three tokens:
 
 $$E = \begin{pmatrix} 2 & 0 \\ 0 & 1 \\ 2 & 2 \end{pmatrix} \qquad \begin{matrix} \leftarrow \text{cat} \\ \leftarrow \text{dog} \\ \leftarrow \text{sun} \end{matrix}$$
 
 Looking up "dog" selects the vector `[0, 1]`.
 
-Suppose the final layer produces h=$[−2,1]$. The logits are $−4$ for cat, $1$ for dog and $−2$ for sun. Dog wins because it has the highest score.
+Suppose the final layer produces h=$[−2,1]$. The logits are $−4$ for cat, $1$ for dog and $−2$ for sun, so dog wins because it has the highest score.
 
 Tying the weights also saves a lot of memory:
 
@@ -4265,15 +4285,15 @@ Tying the weights also saves a lot of memory:
 
 That saves $526,778,368⋅4=2,107,113,472$ bytes, or about **2.1** GB in `float32`.
 
-Without weight tying, the model would have $2,923,466,480+526,778,368=3,450,244,848$ parameters. Tying removes about 15% of them.
+Without weight tying, the model would have $2,923,466,480+526,778,368=3,450,244,848$ parameters, Tying removes about 15% of them.
 
-It also explains why our tensor count did not include a separate output layer. The checkpoint stores the shared matrix only once, under `embed_tokens`.
+Tying also explains why our tensor count had no separate output layer, the checkpoint stores the shared matrix only once, under `embed_tokens`.
 
 ![weight tying](fig/ch7-weight-tying.svg)
 
-(The figure shows 8 of the 257,216 rows and 8 of the 2048 numbers in each row. The bar lengths are drawn by hand for a vector h representing "dog")
+(The figure shows 8 of the 257,216 rows and 8 of the 2048 numbers in each row. The bar lengths are drawn by hand for a vector h representing "dog".)
 
-The code creates `lm_head` on the `meta` device, against the real checkpoint". This lets us inspect its weight shape and count its parameters without allocating memory for the weight values.
+The code creates `lm_head` on the `meta` device, which lets us inspect its weight shape and count its parameters without allocating memory for the weight values.
 
 Then `lm_head.weight = embed_tokens.weight` makes both layers use the same tensor. The `is` operator checks that they reference the exact same object.
 
@@ -4312,7 +4332,7 @@ The top five tokens are `▁increa`, `▁reluct`, `▁encomp`, `▁affor` and `�
 
 *Is something broken?* No
 
-As chapter 1, "Embedding vectors", showed, a dot product depends on both direction and length:
+As in chapter 1, "Embedding vectors", showed, a dot product depends on both direction and length:
 
 $$\mathbf{e}_{\text{dog}} \cdot \mathbf{e}_j = |\mathbf{e}_{\text{dog}}|,|\mathbf{e}_j| \cos\theta$$
 
@@ -4322,11 +4342,11 @@ Another token can score higher if its vector is long enough and points sufficien
 
 Since $\cos\theta\le{1}$, the `▁increa` vector must be longer than the dog vector. The same applies to any token that beats the dog vector when the dog vector itself is used as the input.
 
-Our small example demonstrates this too. If we use the dog vector `[0, 1]` as $h$, the scores are $0$ for cat, $1$ for dog and $2$ for sun. Sun wins because its vector `[2, 2]` is longer and points partly in the same direction.
+If we use the dog vector `[0, 1]` as $h$, the scores are $0$ for cat, $1$ for dog and $2$ for sun. Sun wins because its vector `[2, 2]` is longer and points partly in the same direction.
 
 The head scores both direction and length. It is not designed to receive an embedding and immediately return the same token. Instead, its input comes from the 18 decoder layers and the final norm. Those layers read the full sequence and produce a vector h that points toward the appropriate token row.
 
-The shared matrix is ready. We have not built those layers yet.
+The shared matrix is ready, but we have not built those layers yet.
 
 ### Where the new pieces sit
 
@@ -4353,11 +4373,11 @@ The shared matrix is ready. We have not built those layers yet.
 
 The image now sits inside the text sequence: $266$ vectors, $256$ for the image and $10$ for the text. Each vector contains $2048$ numbers and occupies the correct position.
 
-But nothing reads this sequence yet, before we build the language model, we need to answer two questions.
+But nothing reads this sequence yet. Before we build the language model, we need to answer two questions.
 
 **Which tokens can each token attend to?** The image and question are available from the start, but the model must not look at answer tokens it has not generated yet.
 
-**How do we avoid repeating work?** When generating each new token, the model should not process all $266$ prompt positions again. Those positions have not changed.
+**How do we avoid repeating work?** When generating each new token, the model should not process all $266$ prompt positions again, because those positions have not changed.
 
 In the next chapter, we will build the attention mask, which controls which positions each token can attend to, and the cache, which lets the model reuse its previous work.
 
