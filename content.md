@@ -3150,34 +3150,35 @@ The row $[10, 20, 30, 40]$ shrinks to 2 pixels three ways: nearest neighbor keep
 
 ### From a picture to numbers
 
-After resizing, we still have a PIL image. This is an object designed for working with pictures, such as drawing and saving them. The expression `np.array(image)` convers it into  a regular array of numbers with shape $[224, 224, 3]$: **224** rows (height), **224** columns (width) and **3** values per pixel, for **RGB** (red, green and blue).
+After resizing, we still have a PIL image, an object designed for working with pictures (drawing them, saving them). The expression `np.array(image)` convers it into  a regular array of numbers with shape $[224, 224, 3]$: **224** rows (height), **224** columns (width) and **3** values per pixel, for **RGB** (red, green and blue).
 
-Each value is an 8-bit unsigned integer. 8 bits can represent $2^8 = 256$ different values, so each color channel ranges from 0 to 255. A pure black pixel is $[0, 0, 0]$, a pure white pixel is $[255, 255, 255]$, and a brown pixel might be $[150, 100, 60]$.
+Each value is an 8 bit unsigned integer, and 8 bits can represent $2^8 = 256$ different values, so each color channel ranges from 0 to 255. A pure black pixel is $[0, 0, 0]$, a pure white pixel is $[255, 255, 255]$, and a brown pixel might be $[150, 100, 60]$.
 
-Our photo now contains $224 \times 224 \times 3 = 150{,}528$ numbers. This is the grid of "a few hundred thousand numbers" we introduced at the very start.
+Our photo now contains $224 \times 224 \times 3 = 150{,}528$ numbers, this is the grid of "a few hundred thousand numbers" we introduced at the very start.
 
-There is one detail to watch out for. PIL and NumPy use different orders for the image dimensions. PIL's `image.size` returns (width, height), while a NumPy array's shape is (height, width, channels).
+There is one detail to watch out for, PIL and NumPy order the image dimensions differently.
+PIL's `image.size` returns (width, height) while a NumPy array's shape is (height, width, channels).
 
-That is why our `resize` function accepts `size=(height, width)` but passes `(width, height)` to PIL. Our target is a square, so mixing up the dimensions would not change the result in this case. The function is still correct for images of any size.
+That is why the `resize` function we will write later in the chapter accepts `size=(height, width)` but passes `(width, height)` to PIL. Our target is a square, so mixing up the two would not change the result here, but the function stays correct for images of any shape.
 
 ### Rescale and normalize
 
-The encoder does not receive pixel values between 0 to 255, instead, every value is converted to a range from $-1$ to $1$, we do this in two steps.
+The encoder does not receive pixel values from 0 to 255. Instead, every value is converted to the range from $-1$ to $1$, in two steps.
 
-**Rescaling** divides every value by 255, which moves the values into the range 0-1.
+**Rescaling** divides every value by 255, which moves the values into the range from $0$ to $1$.
 
-**Normalization** subtract mean and divide by a standard deviation
-To refresh your memory, Mean is the average of a list of numbers, while Standard Deviation measures how spread out those numbers are.
+**Normalization** subtracts a mean and divides by a standard deviation.
+To refresh your memory, the mean is the average of a list of numbers, and the standard deviation measures how spread out those numbers are.
 
-Here the mean and std are fixed values. We do not calculate them from the image. The mean is $0.5$ and the standard deviation is also $0.5$, we use these same values for all the three color channels.
+Here the mean and standard deviation are fixed values, we do not calculate them from the image. Both are $0.5$, and we use the same values for all three color channels.
 
 Combining both steps, we divide each value by 255, subtract 0.5, and then divide by 0.5:
 
 $$x' = \frac{x / 255 - 0.5}{0.5}$$
 
-$x$ is the original pixel value between 0 to 255, and $x'$ is the value received by the encoder.
+where $x$ is the original pixel value, from 0 to 255, and $x'$ is the value the encoder receives.
 
-Let's follow some values along these steps.
+Let's follow some values through these steps.
 
 - 0 becomes $0 / 255 = 0$, then $\frac{0 - 0.5}{0.5} = -1$.
 - 255 becomes $255 / 255 = 1$, then $\frac{1 - 0.5}{0.5} = 1$.
@@ -3186,43 +3187,43 @@ Let's follow some values along these steps.
 We can further simplify the formula to $$x' = \frac{x}{127.5} - 1$$
 since dividing by 255 and then by 0.5 is the same as dividing by 127.5.
 
-we can also check an example with it on 51: $51 / 127.5 = 0.4$, and $0.4 - 1 = -0.6$.
+We can check it on 51: $51 / 127.5 = 0.4$, and $0.4 - 1 = -0.6$.
 
-Before performing these calculations, we must covert the values to floating-point numbers.
-An 8-bit integer can store only whole numbers between 0 to 255. It cannot store 0.2 or $-1$.
-In NumPy, subtracting 1 from an 8-bit value of 0 can wrap around to 255 instead of producing $-1$.
+Before performing these calculations, we must covert the values to floating point numbers.
+An 8 bit unsigned integer can store only whole numbers from 0 to 255, so it cannot store 0.2 or $-1$.
+In NumPy, subtracting 1 from an 8 bit value of 0 can wrap around to 255 instead of producing $-1$.
 
-That is why `rescale` coverts the values to 32-bit floating-point numbers using `.astype(np.float32)`. Then `normalize` function then subtracts the mean and divides by the standard deviation. It accepts one mean and one standard deviation per channel, so we can also support models that use different values for RGB color.
+The `rescale` function coverts the values to 32 bit floating point numbers with `.astype(np.float32)`, the `normalize` function then subtracts the mean and divides by the standard deviation. It accepts one mean and one standard deviation per channel, so it also supports models that use different values for each color channel.
 
 **Why move the values around 0?**
 
-Look at what happens immediately after the processor. The first operation in the encoder is the patch convolution, and there is no normalization layer before it. The first normalization `layer_norm1`, comes only after the convolution and the addition of the position vectors.
+Let's look at what happens immediately after the processor: the first operation in the encoder is the patch convolution, and there is no normalization layer before it. The first normalization, `layer_norm1`, comes only after the convolution and the addition of the position vectors.
 
 This means the processor controls the scale of the numbers that enter the convolution.
 
-We have seen in chapter 3, “Layer norm on our patches”, what happens when this scale is wrong. We multiplied an image by 10, and the patch projection grew by 10 while the convolution’s bias and the position vectors, which were added afterwards, stayed the same. The spread of the first token went from 1.1104 to 5.7675, not 10 times bigger and the normalized tokens no longer matched.
+We saw in chapter 3, “Layer norm on our patches”, what happens when this scale is wrong. We multiplied an image by 10, and the patch projection grew 10 times while the convolution’s bias and the position vectors (added afterwards) stayed the same. The spread of the first token went from $1.1104$ to $5.7675$, not 10 times bigger, and the normalized tokens no longer matched.
 
-Using raw pixel values from 0 to 255 would cause an every bigger mismatch. The values would be about 127 times too large, and none would be negative. The convolution’s weights were learned using inputs between $-1$ and $1$, with much larger inputs, its outputs would no longer have the meaning they learned during training. The position vectors would also become much smaller than the patch content in comparison.
+Using raw pixel values from 0 to 255 would cause an even bigger mismatch, the values would be about 127 times and none would be negative. The convolution’s weights were learned with inputs between $-1$ and $1$, with much larger inputs, its outputs would lose the meaning they had during training. The position vectors would also become tiny compared with the patch content.
 
-**Why use fixed numbers instead of each photo's own mean?**
+**Why use fixed numbers instead of mean?**
 
-Layer normalization calculates the mean and spread of each token from its own values. The processor deliberately does not do this.
+Layer normalization calculates the mean and spread of each token from its own values, but the processor deliberately does not.
 
-Imagine a dark gray photo in which every pixel value is 51, and a light gray photo in which every pixel value is 204. With our fixed recipe the first photo becomes $-0.6$, while the second becomes $204 / 127.5 - 1 = 0.6$. The encoder can therefore distinguish the dark photo from the light one.
+Imagine a dark gray photo in which every pixel value is 51, and a light gray photo in which every pixel value is 204. With our fixed recipe the first photo becomes $-0.6$, while the second becomes $204 / 127.5 - 1 = 0.6$, the encoder can therefore distinguish the dark photo from the light one.
 
-If we normalize each photo using its own mean, both photos would become arrays of zeros. The difference between the dark and light photos would disappear.
+If we subtracted each photo's own mean, both photos would become arrays of zeros, and the difference between the dark and light photos would disappear.
 
-Fixed values ensure that every photo is scaled in the same way, so differences in brightness remains.
+Fixed values ensure that every photo is scaled in the same way, so differences in brightness remain.
 
-**Where 0.5 comes from?**
+**Where does 0.5 come from?**
 
-Each model chooses its own mean and standard deviation, and its processor must use the same values. SigLIP (our encoder) was trained with a mean of 0.5 and std of 0.5 for every channel.
+Each model chooses its own mean and standard deviation, and its processor must use the same values. SigLIP (our encoder) was trained with a mean of 0.5 and a standard deviation of 0.5 for every channel.
 
-Many older models instead use the average color statistics of the ImageNet dataset. Their mean values are $[0.485, 0.456, 0.406]$ and standard deviations are $[0.229, 0.224, 0.225]$ for red, green and blue.
+Many older models use the average color statistics of the ImageNet dataset. Their means are $[0.485, 0.456, 0.406]$ and their standard deviations are $[0.229, 0.224, 0.225]$ for RGB color channels.
 
-Do not let the name, `IMAGENET_STANDARD_MEAN` confuse you. HuggingFace uses this name for the three values of 0.5. These are not ImageNet's actual average color statistics, they call those values `IMAGENET_DEFAULT_MEAN`.
+Do not let the name, `IMAGENET_STANDARD_MEAN` confuse you, HuggingFace uses it for the three values of 0.5. These are not ImageNet's actual average color statistics, HuggingFace calls those `IMAGENET_DEFAULT_MEAN`.
 
-The code in this chapter builds on the code from the last chapter. It uses `real`, the config of the real model, and `pix`, the tensor we created earlier. And the loop follows three pixel values through the rescaling and normalization.
+The code in this chapter builds on the code from the last chapter. It uses `real`: the config of the real model, and `pix`: the tensor we created earlier. The loop below follows three pixel values through rescaling and normalization.
 
 ```python
 import numpy as np
@@ -3246,37 +3247,37 @@ pixel  51 -> 0.2 -> -0.6
 pixel 255 -> 1.0 -> +1.0
 ```
 
-Each line shows a pixel value at all three steps. The value 0 ends at $-1.0$, 51 at $-0.6$ and 255 at $+1.0$, matching the numbers we worked out by hand.
+Each line follows one pixel value through the three steps: 0 ends at $-1.0$, 51 at $-0.6$ and 255 at $+1.0$, matching the numbers we worked out by hand.
 
 ### Channels first, then a batch
 
-The array has the shape $[224, 224, 3]$ for height, width, PyTorch layers expect the channels first so $[3, 224, 224]$, to get this we do `image.transpose(2, 0, 1)`.
+The array has shape $[224, 224, 3]$ for height, width and channels, but PyTorch layers expect the channels first, $[3, 224, 224]$.
 
-The three numbers specify where each new axis comes from. The new axis 0 takes old axis 2 (channels), new axis 1 takes old axis 0 (height), and new axis 2 takes old axis 1 (width). 
+We get this with `image.transpose(2, 0, 1)`, the three numbers specify where each new axis comes from. The new axis 0 takes old axis 2 (channels), new axis 1 takes old axis 0 (height), and new axis 2 takes old axis 1 (width).
 
-$[224, 224, 3]$ becomes $[3, 224, 224]$. (NumPy's `transpose` takes the whole new order at once. For specifying the complete axis in PyTorch is `permute`.
+So $[224, 224, 3]$ becomes $[3, 224, 224]$. (NumPy's `transpose` takes the whole new order at once, PyTorch's `permute` method does the same).
 
-Let's look at a small example. Suppose an image is one pixel tall and two pixels wide. Its pixels are $[10,20,30]$ and $[40,50,60]$, so its shape is $[1,2,3]$. After `transpose(2, 0, 1)`, its shape becomes $[3, 1, 2]$. Each color channel now has its own small image. The red channel contains $[10,40]$, the green channel contains $[20,50]$, and the blue channel contains $[30,60]$.
+Here is a small example: an image one pixel tall and two pixels wide, with pixels $[10,20,30]$ and $[40,50,60]$, has shape is $[1,2,3]$. After `transpose(2, 0, 1)`, its shape becomes $[3, 1, 2]$, and each color channel has its own small image: red holds $[10,40]$, green $[20,50]$, and blue $[30,60]$.
 
-No values have changed. They have only moved into a different order.
+No values have changed; they only moved into a different order.
 
-The processor handles a list of images, one image at a time. After resizing, every image has the same shape, $[3,224,224]$. This allows `np.stack` to combine them into one array with shape $[B,3,224,224]$. The function `torch.tensor` then converts this array into the tensor we call `pixel_values`.
+The processor handles a list of images, one image at a time. After resizing, every image has the same shape, $[3,224,224]$, so `np.stack` can combine them into one array of shape $[B,3,224,224]$. The function `torch.tensor` then converts this array into the tensor we call `pixel_values`.
 
-This is another reason we resize the images first. Images with different dimensions cannot be stacked into one regular array.
+This is another reason to resize first, because images with different dimensions cannot be stacked into one regular array.
 
-Here is the complete process.
+Here is the complete process:
 
 ![preparing the image](fig/ch6-image-preprocessing.svg)
 
-Follow the orange square. Its red value starts at 51 in the original image. Dividing by 255 changes it to 0.20, and normalization changes it to −0.60.
+Follow the orange square, its red value starts at 51, dividing by 255 turns it into $0.20$, and normalization turns it into $−0.60$.
 
-The bar at the bottom shows how the full range changes at each step. The values move from 0–255 to 0–1 and then to −1–1. In the final step, the three color channels are separated and stacked front to back.
+The bar at the bottom shows how the full range changes at each step. The values go from $0$ to $255$, then $0$ to $1$, then $−1$ to $1$. In the final step, the three color channels are separated and stacked front to back.
 
 ### The image side in code
 
-We can now turn these steps into small functions. We will also write `process_images`, which runs the functions in order for a list of images.
+We can now turn these steps into small functions, and with `process_images` which runs them in order on a list of images.
 
-We will test it using the dog image and compare the result with two references: our own `pix` tensor and HuggingFace's image processor for the SigLIP encoder.
+We test it on our dog photo and compare the result with two references: our own `pix` tensor and HuggingFace's image processor for the SigLIP encoder.
 
 ```python
 def resize(image, size, resample=None):
@@ -3333,108 +3334,104 @@ same as pix: True
 largest difference from Hugging Face's image processor: 7.84e-03
 ```
 
-The original size of the photo is `(3000, 3000)`, using PIL's `(width, height)` order. The image is square, so resizing does not squeeze it in either direction.
+The photo's original size is `(3000, 3000)`, using PIL's `(width, height)` order the image is square, so resizing does not squeeze it in either direction.
 
-`pixel_values` has shape $[1,3,224,224]$ and data type is `float32`. Its smallest value is $−1.000$, and its largest is $1.000$. This means the image uses the full range: at least one color channel has a value of 0, and at least one has a value of 255.
+`pixel_values` has shape $[1,3,224,224]$ and data type is `float32`. Its smallest value is $−1.000$, and largest is $1.000$, so the image uses the full range. At least one channel value is 0, and at least one is 255.
 
-Our tensor is same as **`pix`**, we had built `pix` by resizing the image to `(224, 224)`, dividing by 255, subtracting 0.5, and dividing by 0.5. We said the processor would handle these steps later. This is that implementation, using the same steps.
+Our tensor is the same as **`pix`**, we built `pix` by resizing the image to `(224, 224)`, dividing by 255, subtracting 0.5, and dividing by 0.5, and we said the processor would handle these steps later. This is that processor doing the same steps.
 
-**PIL** uses bicubic resampling when no method is specified in our earlier `resize` call, so the resizing method also matches.
+**PIL** uses bicubic resampling when no method is given, as in our earlier `resize` call, so the resizing method also matches too.
 
-The largest difference from HF's image processor is $7.84×10^{−3}$. One brightness level out of 255 is $1/255$ after rescaling. After dividing by 0.5 during normalization, the difference becomes $2/255\approx0.00784$.
+The largest difference from HuggingFace's image processor is $7.84×10^{−3}$. One brightness level out of 255 is $1/255$ after rescaling, and dividing by 0.5 during normalization doubles it to $2/255\approx0.00784$.
 
-This means that at least one color channel of one pixel differs by one brightness level between the two results. HF image processor does not use PIL for resizing by default. Two resizing implementations can both use bicubic resampling and still round some pixels differently.
-
-This small difference does not matter to the model.
+So no value differs more than one brightness level, and at least one differs by exactly one.
+HuggingFace's image processor does not resize with PIL by default, and two implementations can both use bicubic resampling and still round some pixels differently. This small difference does not matter to the model.
 
 **The image side is complete. Now let's prepare the question!**
 
 ### From words to tokens
 
-We know that a Transformer reads one token at a time, so each token has an ID, which is a whole number that selects a row in an embedding table.
+We know that a Transformer reads a sequence of tokens and each token has an **ID**, a whole number that selects a row in an embedding table.
 
-*But, how does a sentence become tokens in the first place?*
+*But, how does a sentence become tokens?*
 
 The tool that performs this conversion is called a **Tokenizer**.
 
-The prompt for our example here is `"what color is the dog?"`
-or `"answer en what color is the dog?"`
+The prompt for our example is `"what color is the dog?"`/`"answer en what color is the dog?"`
 
-(for the pretrained checkpoint of `paligemma-3b-pt-224` the prompt has a prefix “answer en”. PaliGemma was trained on many tasks, each task with short prefix, and “answer en” tells it to answer the question that follows in English).
+PaliGemma was trained on many tasks, each with a short prefix, and “answer en” tells it to answer the question that follows in English.
 
-Our prompt contains 32 characters, including spaces, so this method produces 32 tokens. The vocabulary stays small, with only a few hundred symbols for English. This method assigns one token per character.
+The simplest approach is **one token per character**. Our prompt contains 32 characters, including spaces, so it produces 32 tokens, and the vocabulary stays small, with only a few hundred symbols for English.
 
-However, the sequences become longer. Attention calculates scores for pairs of tokens, so its cost grows with the square of the sequence length. With 32 tokens, it calculates $32^2=1024$ scores. With the 8 tokens we will use, its $8^2=64$ scores. 16 times fewer scores.
+However, when the sequences become longer, Attention calculates scores for pairs of tokens, so its cost grows with the square of the sequence length. With 32 tokens it calculates $32^2=1024$ scores, and with the 8 tokens $8^2=64$ scores, which is 16 times fewer.
 
-A single character also carries very little meaning, much like a single pixel.
+A single character also carries very little meaning, like a single pixel.
 
-**One token per word** produces shorter sequences, but the vocabulary becomes much larger. The words "dog", "dogs", "doggo", and "Dog" would each need their own row in the vocabulary. Every language adds more words. New names and typos also cause problems because a word that never appeared during training would have no ID.
+**One token per word** produces shorter sequences, but the vocabulary becomes much larger. The words "dog", "dogs", "doggo", and "Dog" would each need its own row in the vocabulary. Every language adds more words and new names and typos can also cause problems because a word that never appeared during training would have no ID.
 
-Modern tokenizers use a method of **Pieces of words**. Common words often become a single token, while rare words are split into smaller, common pieces. This method is called **Subword Tokenization**.
+Modern tokenizers split text into **pieces of words**: common words often become a single token, while rare words are split into smaller, common pieces. This method is called **subword tokenization**.
 
-The pieces are not chosen randomly, but are learned from a large collection of text. One popular method is **byte pair encoding**, or **BPE**. It starts with individual characters and repeatedly joins the neighboring pair that appears most often.
+The pieces are not chosen at random, they are learned from a large collection of text. One popular method is **byte pair encoding**, or **BPE**. It starts with individual characters and repeatedly joins the neighboring pair that appears most often.
 
-To demonstrate this using an example, suppose our training text contains three words: 
+Here is an example, Suppose our training text contains three words: 
+##### "low", "lower", and "lowest
 
-##### "low", "lower", and "lowest"
-
-We start with individual characters. 
-The word "lower" becomes `l o w e r`. 
+We start with individual characters,
+so "lower" becomes `l o w e r`. 
 The pairs `l-o` and `o-w` both appear in all three words.
 
-Suppose we join `l-o` first to create the piece `lo`. We then count the pairs again. 
+Suppose we join `l-o` first, creating the piece `lo`, and count the pairs again.
 
-The pair `lo-w` now appears three times, so we join it to create `low`.
+The pair `lo-w` now appears three times, so we join it into `low`.
 
 After these two merges, "lower" becomes `low e r`
-while "lowest" becomes `low e s t`.
+and "lowest" becomes `low e s t`.
 
-A word that never appeared in the training text, such as "slower", can still be split into known pieces: `s low e r`.
+A word that never appeared in the training text, such as "slower", can still be split into pieces:
+`s low e r`.
 
-The process continues until the vocabulary reaches the desired size.
+This process continues until the vocabulary reaches the desired size.
 
-Our language model used in demonstration is Gemma from Google. Its tokenizer was built using SentencePiece, a library that learns token pieces with BPE or a related method.
+Our language model is Gemma and its tokenizer was built using **SentencePiece**, a library that learns token pieces with BPE or a related method.
 
-The vocabulary contains 256,000 pieces. It is large because it supports many languages. If the tokenizer encounters a character it does not recognize, it can fall back to the character's raw bytes. This means it can still tokenize text it has never seen before.
+The vocabulary contains 256,000 pieces, its large because it supports many languages. If the tokenizer meets a character it does not recognize, it falls back to the character's raw bytes, so it can still tokenize text it has never seen before.
 
-**SentencePiece** represents a space with the symbol ▁. The piece `▁dog` means "dog, with a space in front of it". This marker allows the tokenizer to reconstruct the original text, including its spaces.
+SentencePiece represents a space (symbol: ▁). The piece `▁dog` means "dog with a space in front of it". This marker allows the tokenizer to reconstruct the original text including its spaces.
 
-When we tokenize our prompt later in this chapter, we will get eight pieces: `answer`, `▁en`, `▁what`, `▁color`, `▁is`, `▁the`, `▁dog`, and `?`.
+When we tokenize our prompt, we will get eight pieces: `answer`, `▁en`, `▁what`, `▁color`, `▁is`, `▁the`, `▁dog`, and `?`.
 
 Notice that `answer` has no ▁ marker because there is no space before it.
 
-A large vocabulary has a cost. The embedding table contains one row per token, so a vocabulary of 256,000 tokens requires 256,000 rows. We will return to this table when we build the language model.
+A large vocabulary has a cost, the embedding table contains one row per token so a vocabulary of 256,000 tokens requires 256,000 rows. We will return to this table when we build the language model.
 
 ![Figure Subword Tokens](fig/ch6-subword-tokens.svg)
 
 
-The prompt `"answer en what color is the dog?"` is split in three ways: 32 characters, 7 words plus `?`, and 8 subword pieces with ▁ marking spaces. The 8 pieces become 8 IDs, and each ID selects a row in the embedding table.
+The prompt `"answer en what color is the dog?"` is split three ways: 32 characters, 7 words plus `?`, and 8 subword pieces with ▁ marking spaces. The 8 pieces become 8 IDs, and each ID selects a row in the embedding table.
 
 ### Special tokens
 
-Some tokens do not come from splitting ordinary text. Instead, they are markers with specific jobs. These are called **special tokens**.
+Some tokens do not come from splitting ordinary text, they are markers with specific jobs called **special tokens**.
 
-The tokenizer treats each special token as a single unit. For example, it always treats `<bos>` as one token. It never splits it into `<`, `bos`, and `>`.
+The tokenizer treats each special token as a single unit,`<bos>` is always one token, never split into `<`, `bos`, and `>`.
 
-Three special tokens are important to us.
+There are three special tokens which are important to us:
 
 - `<bos>`, or beginning of sequence, marks the start of the text. Gemma was trained with `<bos>` at the beginning of its text, so it expects this token.
-- `<eos>`, or end of sequence, marks the end of a generated answer. The model writes this token when it finishes its answer. We will need it when we build the text-generation loop.
+- `<eos>`, or end of sequence, marks the end of a generated answer. The model writes it when it finishes its answer, we will need it when we build the text-generation loop.
 - `<pad>` is a filler token used to make prompts of different lengths the same size.
 
-The processor needs one more special token: `<image>`. We use this token to reserve a seat for the picture.
+The special token `<image>` reserves the picture's seats.
 
 ### Tokens for boxes and masks
 
-PaliGemma can do more than answer questions. It can also detect objects and return the coordinates of a box around them. It can segment objects by describing their outlines.
+PaliGemma can do more than answer questions, It detects objects and return the coordinates of a box around them, It can also segment objects by describing their outlines.
 
 Both types of output use tokens, so the vocabulary includes two additional families.
 
-The first family contains 1,024 location tokens, from `<loc0000>` to `<loc1023>`. These tokens represent positions in the image. Each side of the image is divided into 1,024 steps. A bounding box is represented by four location tokens, one for each edge.
+The first family contains 1,024 location tokens, from `<loc0000>` to `<loc1023>`. These represent positions in the image, Each side is divided into 1,024 steps, and a bounding box is written as four location tokens one per edge. For example, an edge halfway down the image is represented by a token near `<loc0512>`.
 
-For example, an edge halfway down the image is represented by a token near `<loc0512>`.
-
-The second family contains 128 segmentation tokens, from `<seg000>` to `<seg127>`. These tokens describe the shape of an outline. A small, separate decoder converts them back into a mask.
+The second family contains 128 segmentation tokens, from `<seg000>` to `<seg127>`. These describe the shape of an outline, and a small, separate decoder converts them back into a mask..
 
 We will not use either family in this chapter, but they help explain the size of the vocabulary. Let's count Gemma's pieces, the two additional families, and the `<image>` token:
 
@@ -3442,44 +3439,41 @@ $$256{,}000 + 1{,}024 + 128 + 1 = 257{,}153$$
 
 The total includes 256,000 ordinary Gemma pieces, 1,024 location tokens, 128 segmentation tokens, and one `<image>` token.
 
-The `<image>` token comes last. Since IDs start at 0, its ID is 257,153−1=257,152.
+The `<image>` token comes last. Since IDs start at 0, its ID is $257,153−1=257,152$.
 
-Our processor adds these tokens to the tokenizer using `add_tokens`. However, the tokenizer we download already belongs to PaliGemma. It already contains all 1,024+128+1=1,153 additional tokens.
+Our processor adds these tokens to the tokenizer using `add_tokens`, however the tokenizer we download already belongs to Gemma and contains all $1,024+128+1=1,153$ additional tokens.
 
-As a result, the vocabulary size does not change. You will see 257,153 printed both before and after we add the tokens.
+As a result, the vocabulary size does not change: you will see 257,153 printed both before and after we add the tokens.
 
-This is exactly what we want. A token's ID selects its row in the embedding table, and PaliGemma's table was trained with `<image>` at row 257,152.
-
-If we started with a plain Gemma tokenizer instead, `add_tokens` would assign new IDs to our additional tokens. These IDs would come after Gemma's existing pieces, and `<image>` would end up at a different row from the one used during training.
-
-The code would still run, but the IDs would be wrong.
+This is exactly what we want, a token's ID selects its row in the embedding table, and Gemma's table was trained with `<image>` at row 257,152. If we started with a plain Gemma tokenizer instead, `add_tokens` would assign new IDs to our additional tokens. These IDs would come after Gemma's existing pieces, and `<image>` would end up at a different row from the one used during training. The code would still run, but the IDs would be wrong.
 
 ### Leaving seats for the image
 
-We can now format the prompt the way PaliGemma expects it. The format comes from the PaliGemma paper ([Beyer et al., 2024](https://arxiv.org/abs/2407.07726)):
+We can now format the prompt the way PaliGemma expects it, which comes from the paper ([Beyer et al., 2024](https://arxiv.org/abs/2407.07726)):
 
-- one `<image>` token for every image patch, givin us 256 tokens,
-- `<bos>`,
-- the prompt, which the paper calls the **prefix**,
-- a newline, `\n`.
+- one `<image>` token for every image patch, giving us 256 tokens
+- `<bos>`
+- the prompt, which the paper calls the **prefix**
+- a newline, `\n`
 
 We can build the entire string with one line of code:
 
 `f"{image_token * image_seq_len}{bos_token}{prefix_prompt}\n"`
 
-In Python, multiplying a string by a number repeats that string. So `"<image>" * 256` produces the `<image>` token 256 times in a row.
+In Python, multiplying a string by a number repeats it, so `"<image>" * 256` produces `<image>` token 256 times in a row.
 
-The model's answer comes after the newline. The paper calls this part the **suffix**.
+The model's answer comes after the newline, and the paper calls this part **suffix**.
 
-During training, the real answer appeared here, followed by `<eos>`. During inference, the model generates the answer itself. The newline separates the question from the answer. The model learned to start answering immediately after it. PaliGemma was trained with the newline as its own token. It was not joined to the final character of the prompt. Our output will show the newline on its own as well.
+During training, the model is given a question along with its correct answer, followed by `<eos>`. By learning from these examples the model gets to know how to generate answers to questions.
+During inference, the model generates the answer itself, the newline separates the question from the answer and the model learns to start answering immediately after it. PaliGemma was trained with the newline as its own token, not joined to the last character of the prompt. Our output will show it on its own as well.
 
-Why do we use `answer en`?
+*Why do we use `answer en`?*
 
-PaliGemma was trained on several tasks, so each prompt starts with a short task prefix that identifies the task and, when needed, the language. For example, `caption en` asks for an English caption. `answer en` followed by a question asks for an English answer. `detect` followed by an object asks the model to locate it with a bounding box.
+PaliGemma is trained on several tasks, so each prompt starts with a short task prefix that identifies the task. For example, `caption en` asks for an English caption, `answer en` followed by a question asks for an English answer, and `detect` followed by an object asks the model to locate it with a bounding box.
 
-The model we load, `paligemma-3b-pt-224`, is the pretrained base model. The `pt` means pretrained, `3b` means approximately 3 billion parameters, and `224` refers to the image size in pixels.
+The model we load, `paligemma-3b-pt-224`, is the pretrained base model. The `pt` means pretrained, `3b` means 3 billion parameters, and `224` refers to the image size in pixels.
 
-The model works best when we format prompts in the same way as the prompts used during training. The `<image>` tokens are placeholders. They do not carry any meaning on their own. Their job is to reserve 256 positions in the sequence, one for each of the 256 vectors produced by the vision encoder.
+The model works best when we format prompts in the same way as the prompts split during training, the `<image>` tokens are placeholders that carry no meaning on their own and their job is to reserve 256 positions in the sequence, one for each of the 256 vectors produced by the vision encoder.
 
 *Why reserve these positions instead of adding the image vectors to the sequence later?*
 
@@ -3489,11 +3483,11 @@ Because the rest of the pipeline works with token IDs. The tokenizer counts IDs,
 
 *How many positions do we need?*
 
-We need one for each patch. We calculated the number of patches earlier by dividing the image size by the patch size and squaring the result:
+We need one for each patch, we calculated the number of patches earlier by dividing the image size by the patch size and squaring the result:
 
 $$N_{\text{image}} = \left(\frac{224}{14}\right)^2 = 16^2 = 256$$
 
-Here, 224 is the image size, and 14 is the patch size used by the real model.
+where 224 is the image size and 14 is the patch size used by the real model.
 
 In code, we calculate this as `(real.image_size // real.patch_size) ** 2`. This is the value stored in `VisionConfig` under `num_image_tokens`.
 
@@ -3508,43 +3502,41 @@ $$T = 256 + 1 + 8 + 1 = 266$$
 
 ![preparing the text](fig/ch6-prompt-tokens.svg)
 
-The figure shows our prompt `"answer en what color is the dog?"`, with 8 prompt tokens, 266 IDs, and 266 ones in the attention mask. The empty frames on the left represent the 256 image positions. Next comes the yellow `<bos>` token, followed by the blue prompt tokens and the green newline on its own.
+The figure shows our prompt `"answer en what color is the dog?"`, with 8 prompt tokens, 266 IDs, and 266 ones in the attention mask. The empty frames on the left represent the 256 image positions. Next, the yellow `<bos>` token followed by the blue prompt tokens and the green newline on its own.
 
-There is one more detail to handle. Gemma's tokenizer adds a `<bos>` token to the beginning of every text by default.
+Gemma's tokenizer adds a `<bos>` token to the beginning of every text by default. We have already included `<bos>` in our string, so the processor calls the tokenizer with `add_special_tokens=False`. Otherwise, the tokenizer would add a second `<bos>` before the 256 image tokens.
 
-We have already included `<bos>` in our string, so the processor calls the tokenizer with `add_special_tokens=False`. Otherwise, the tokenizer would add a second `<bos>` before the 256 image tokens.
-
-The sequence would then contain 267 tokens instead of 266. That would no longer match the format used during training.
+The sequence would then contain 267 tokens instead of 266 and no longer match the format used during training.
 
 ### Padding and the attention mask
 
-A batch must form a rectangle. Suppose we process two prompts at the same time, but one is shorter than the other. Their rows of token IDs would have different lengths, so we wont be able to stack them into a single tensor.
+If we are processing two prompts at the same time, but one is shorter than the other, their rows of token IDs would have different lengths, so we wont be able to stack them into a single tensor.
 
-The solution to this is **padding**. The tokenizer fills the shorter row with `<pad>` tokens until both rows have the same length.
+The solution is **padding**: the tokenizer fills the shorter row with `<pad>` tokens until both rows have the same length.
 
-The model must ignore these padding tokens. The **attention mask** tells it which positions contain real tokens and which contain padding. It is a row of ones and zeros alongside the token IDs: 1 marks a real token, and 0 marks padding.
+The model must ignore these padding tokens as the **attention mask** tells it which positions contain real tokens and which contain padding. It is a row of ones and zeros alongside the token IDs: 1 marks a real token, and 0 marks padding.
 
-Let's look at a small example using only two image positions. One prompt contains three tokens, `a b c`, while the other contains just one token, `d`.
+Here is a small example with only two image positions, one prompt contains three tokens, `a b c`, and the other just one, `d`.
 
 ![padding and the attention mask](fig/ch6-padding-mask.svg)
 
 The setting `padding="longest"` tells the tokenizer to pad each row to match the length of the longest prompt in the batch.
 
-With our actual image size, an 8-token prompt next to a 5-token prompt would produce rows of 266 and 263 tokens. The shorter row would receive 3 padding tokens. Its attention mask would contain 263 ones and 3 zeros.
+With our actual image size, an 8-token prompt next to a 5-token prompt would produce rows of 266 and 263 tokens, so the shorter row would get 3 padding tokens, and its attention mask would hold 263 ones and 3 zeros.
 
-Whether the padding tokens appear at the start or the end of a row depends on the tokenizer's settings. Our example places them at the end.
+Whether the padding tokens appear at the start or the end of a row depends on the tokenizer's settings; our example places them at the end.
 
-If we process only one prompt, there is nothing to pad, so the attention mask contains only ones. The setting `truncation=True` provides another safeguard. If a text is longer than the tokenizer's maximum allowed length, the tokenizer cuts it down. Our prompt is nowhere near that limit.
+If we process only one prompt, there is nothing to pad, so the attention mask contains only ones. The setting `truncation=True` adds another safeguard, If a text is longer than the tokenizer’s maximum length, the tokenizer cuts it down, Our prompt is nowhere near that limit.
 
 ### The text side in code
 
 The following code loads PaliGemma's tokenizer and builds `VLMProcessor`, which combines the image and text sides.
 
-The tokenizer is stored in a gated repository on the HuggingFace Hub. You must accept the license on the model's page and log in with a token that has access. The first line of code below handles the login.
+The tokenizer is stored in a gated repository on the HuggingFace Hub, you must accept the license on the model's page and log in with a token that has access. The first lines of code below handles the login.
 
-The call `add_tokens([self.IMAGE_TOKEN], special_tokens=True)` marks `<image>` as a special token. This ensures the tokenizer treats it as one unit instead of splitting it into smaller pieces.
+The call `add_tokens([self.IMAGE_TOKEN], special_tokens=True)` marks `<image>` as a special token, so the tokenizer treats it as one unit instead of splitting it into smaller pieces.
 
-The code then runs the processor on the dog photo and our prompt. It prints the tokens and tensor shapes so we can check the results.
+The code then runs the processor on the dog photo and our prompt and prints the tokens and tensor shapes so we can check them.
 
 ```python
 from huggingface_hub import login
@@ -3631,29 +3623,29 @@ first 3 tokens: ['<image>', '<image>', '<image>']
 last tokens:    ['<bos>', 'answer', '▁en', '▁what', '▁color', '▁is', '▁the', '▁dog', '?', '\n']
 ```
 
-For **vocabulary** our tokenizer contains $257,153$ tokens both before and after we add the extra tokens. This is because PaliGemma's tokenizer already contains all of them. The `<image>` token has ID $257,152$, the last ID in the vocabulary, as we had discussed earlier.
+Our tokenizer contains 257,153 tokens both before and after we add the extra tokens, because PaliGemma’s tokenizer already contains all of them. The `<image>` token “has ID 257,152, the last ID in the vocabulary, as we discussed earlier.
 
 **Prompt** produces 8 pieces, with ▁ marking spaces. The piece `answer` has no marker because Gemma's tokenizer does not add an invisible space at the beginning of a text.
 
-This is why tokenizing the prompt by itself produces the same 8 pieces as tokenizing it inside the full string. It also means we can count the prompt tokens separately.
+This is why tokenizing the prompt by itself produces the same 8 pieces as tokenizing it inside the full string, so we can count the prompt tokens separately.
 
-`pixel_values` has the shape $[1,3,224,224]$, and `input_ids` has shape $[1,266]$. This matches the total we calculated: $256+1+8+1=266$.
+`pixel_values` has the shape $[1,3,224,224]$, and `input_ids` has shape $[1,266]$, matcing the total we calculated: $256+1+8+1=266$.
 
 In **mask** every value is 1, we processed only one prompt so no padding was needed.
 
-**The seats** have exactly $256$ IDs match $257,152$, the ID of the `<image>` token. There is one for each image patch.
+**The seats** have exactly $256$ IDs match $257,152$, the ID of the `<image>` token, there is one for each image patch.
 
-The sequence starts with `<image>` tokens. Its last 10 tokens are `<bos>`, the 8 prompt pieces, and `'\n'` on its own.
+The sequence starts with `<image>` tokens, its last 10 tokens are `<bos>`, the 8 prompt pieces, and `'\n'` on its own. 
 
-This matches the format described in the paper, token for token.
+This matches the format described in the paper.
 
 ### Checking against the official processor
 
-We have rebuilt the processor's behavior by hand. HuggingFace also provides an official PaliGemma processor called `PaliGemmaProcessor`, which is built from the same model files.
+We have rebuilt the processor's behavior by hand. HuggingFace also provides an official one,  `PaliGemmaProcessor`, built from the same model files.
 
-In the final code block, we run the official processor on the same photo and prompt. We then compare its outputs with ours using `torch.equal`. This function checks whether two tensors are exactly equal, not merely close to each other.
+In the final code block, we run the official processor on the same photo and prompt, we then compare its outputs with ours using `torch.equal`. This function checks whether two tensors are exactly equal, not merely close to each other.
 
-For the pixel values, we use HuggingFace's image processor with `backend="pil"`. This makes it resize the image with PIL, just as our code does. It should remove the small brightness difference we saw earlier.
+For the pixel values, we use HuggingFace's image processor with `backend="pil"`, making it resize the image with PIL, just as our code does and removes the small brightness difference we saw earlier.
 
 ```python
 from transformers import PaliGemmaProcessor, AutoImageProcessor
@@ -3676,11 +3668,11 @@ same input_ids:    True
 same pixel_values: True
 ```
 
-The official processor expects the text to contain the `<image>` tokens. Our prompt does not include them, so the official processor adds them automatically, just as our processor does. The warning tells us that this has happened.
+The official processor expects the text to contain the `<image>` tokens. Our prompt does not include them, so the official processor adds them automatically, just as ours does, and the warning tells us so.
 
 The result for the **IDs** is `True`, all 266 token IDs match exactly, including the image positions, `<bos>`, the prompt, and the newline.
 
-The **pixel** result is also `True`, all 150,528 pixel values match exactly. The small difference we saw earlier came from the resizing implementation.
+The **pixel** result is also `True`, all 150,528 pixel values match exactly, and the small difference we saw earlier came from the resizing implementation.
 
 Our processor now produces exactly the inputs PaliGemma was trained on.
 
@@ -3707,13 +3699,13 @@ The pixels can now pass through everything we built in the first five chapters. 
 
 The seating chart is ready, but the image positions are still empty.
 
-Look at what each side produces. The encoder converts `pixel_values` into 256 vectors, each containing 1152 numbers. The language model will convert each of the 266 token IDs into a vector of its own. Gemma's vectors contain 2048 numbers each.
+The encoder converts `pixel_values` into 256 vectors, each containing 1152 numbers. The language model will convert each of the 266 token IDs into a vector of its own, and Gemma’s vectors contain 2048 numbers each.
 
-Vectors with different lengths cannot be placed in the same sequence. Even after we make their lengths match, we must place the image vectors in exactly the 256 positions reserved for them. The text tokens must keep their own positions.
+Vectors with different lengths cannot be placed in the same sequence, even after we make their lengths match, we must place the image vectors in exactly the 256 positions reserved for them while the text tokens keep their own positions.
 
-In the next chapter, we will build the bridge between the two sides. We will add a small layer that changes the image vectors to match the language model's width. We will also write the code that places those vectors into the positions reserved by the processor.
+In the next chapter, we will build the bridge between the two sides: a small layer that resizes the image vectors to the language model’s width, and the code that places them into the positions the processor reserved.
 
-That is the point where a picture becomes the part of a sentence.
+That is the point where a picture becomes part of a sentence.
 
 
 ---
