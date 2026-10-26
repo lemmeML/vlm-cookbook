@@ -4382,3 +4382,539 @@ But nothing reads this sequence yet. Before we build the language model, we need
 In the next chapter, we will build the attention mask, which controls which positions each token can attend to, and the cache, which lets the model reuse its previous work.
 
 ---
+
+# Chapter 8. Writing One Token at a Time
+
+At the end of the last chapter we combined the image and text into one sequence. The merge produced 266 vectors of 2048 numbers each, 256 for the image patches and 10 for the text. But we still need to answer two questions.
+
+_Which tokens can each token attend to?_ The model receives the image and question at the start, but it generates the answer one token at a time. A token in the answer must not look at tokens that the model has not generated yet.
+
+_How do we avoid repeating work?_ When the model generates a new token, we should not process all 266 prompt tokens again. We already processed them and their inputs have not changed.
+
+In this chapter we build three solutions: the **attention mask**, which controls which tokens each token can attend to; the **KV cache**, which stores previously computed keys and values; and the **position IDs**, which tell the model where each token sits in the sequence.
+
+
+![ch-8-opening](fig/ch8-opening.svg)
+
+> **Main Idea:** The model generates its answer one token at a time, and the KV cache stores the keys and values it has already computed, so each step processes only the new token and reuses the cached results. The attention mask controls which tokens it can read, and the position IDs tell it where each token belongs in the sequence.
+
+Think back to our room example: each person had a question card (query), a name tag (key), and a notebook (value), now imagine those people entering the room one at a time.
+
+Without a cache, each new person would make everyone else prepare their name tags and notebooks again, which wastes time, because information remains same. With a KV cache, everyone keeps their existing name tag and notebook, and each newcomer prepares only their own and reads what is already on the table. The attention mask controls whose name tags each person can read, and the position ID records the order in which each person entered the room.
+
+### How a language model writes its answer
+
+We know how a language model reads a sentence and scores every token in its vocabulary, the token with the highest score becomes its prediction for the next token.
+
+Our language model does the same with our prompt. The Transformer takes a sequence of tokens and returns one vector per position: it reads all 266 input vectors, returns 266 output vectors, and each output vector predicts the token that should follow its position.
+
+Only the prediction at the newline matters, because that is where the answer begins.
+
+As we saw in Weight tying,`lm_head` converts the newline's output vector into 257,216 scores, one for each token in the vocabulary. The model then selects a token from those scores. For example, the predicted token might be `▁brown`.
+
+The model appends `▁brown` to the sequence and runs again, now with 267 tokens. It repeats with 268 tokens, 269 tokens and so on, until it generates `<eos>`, the end of sequence token.
+
+This process is called **autoregressive generation**, the model generates one token at a time, using the tokens that came before it as context. Choosing the token with the highest score is called **greedy decoding**. We will look at other token selection methods when we build the generation loop.
+
+### The waste without a cache
+
+Without a KV cache, the model processes the entire sequence again at every generation step, so the 266 prompt tokens are processed over and over, even though their inputs have not changed.
+
+We compare the cumulative number of tokens processed with and without a cache.
+
+```python
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
+steps = 4
+without_cache = [sum(range(1, t + 1)) for t in range(1, steps + 1)]   # step t recomputes all t tokens
+with_cache = list(range(1, steps + 1))                                # step t computes only the new token
+print("tokens processed so far, without cache:", without_cache)
+print("tokens processed so far, with cache:   ", with_cache)
+```
+
+**Output:**
+
+```
+tokens processed so far, without cache: [1, 3, 6, 10]
+tokens processed so far, with cache:    [1, 2, 3, 4]
+```
+
+Without a cache, the total number of tokens grows quadratically with the number of steps; with a cache, each step adds only one.
+
+Now consider our dog prompt and an answer containing 10 tokens. Without a cache, the model processes 266 tokens in the first step, 267 in the second, and so on, up to 275.
+
+$$266 + 267 + \dots + 275 = 10 \cdot 266 + (0 + 1 + \dots + 9) = 2{,}660 + 45 = 2{,}705~\text{tokens}$$
+
+With a cache, the model processes the 266 prompt tokens once and then one new token per step. Generating 10 answer tokens means processing the prompt plus 9 more tokens, since the 10th is predicted at the last step but never fed back in: $$266 + 9 = 275$$
+
+The cached approach processes about $2{,}705 / 275 \approx 9.8$ times fewer tokens.
+
+![kv cache](fig/ch8-kv-cache.svg)
+
+### What the newest token needs
+
+Why can we skip the old tokens? To see why let's look at the attention equation for the newest token at position $t$. $$\mathbf{o}_t = \sum_{j=1}^{t} a_{tj},\mathbf{v}_j \qquad a_{tj} = \text{softmax}_j\left(\frac{\mathbf{q}_t \cdot \mathbf{k}_j}{\sqrt{d_h}}\right)$$
+
+where $\mathbf{q}_t$ is the newest token's query, $\mathbf{k}_j$ and $\mathbf{v}_j$ are the key and value of token $j$, $d_h$ is the attention head dimension, and $a_{tj}$ is the attention weight that token $t$ assigns to token $j$. The output vector for token $t$ is $\mathbf{o}_t$.
+
+We need only the newest query, but we still need the keys and values of all previous tokens.
+
+The important point is that **previous tokens' keys and values do not change when a new token arrives**. Each token's key and value are computed from its own hidden state, which depends only on tokens it was allowed to attend to. Under causal or prefix LM attention, that state does not depend on future answer tokens.
+
+This remains true across layers. For example, a token’s key in layer 2 is computed from its hidden state after layer 1, which also depends only on the tokens available at its position, so adding a new token later does not change it.
+
+### The cache
+
+A **KV cache**, short for key value cache, stores the keys and values that the model has already computed. At each decoding step, the model processes the newest token, appends its key and value to the cache, and uses the new query to attend to all the cached keys and values.
+
+Our `KVCache` class uses two Python lists: `key_cache` and `value_cache`. Each list stores one tensor per layer, so once we build the language model, each will contain 18 tensors.
+
+Each tensor has shape $[B, H_{kv}, T, d_h]$, following the head layout from chapter 5, where $B$ is the batch size, $H_{kv}$ is the number of key value heads (Gemma uses 1, as we will see when we build its attention layer), $T$ is the number of tokens stored in the cache, and $d_h$ is the head dimension, 256 for Gemma.
+
+The `update` method stores the keys and values for a layer. The first time it sees a layer, it adds the tensors to the cache; on later calls, it appends the new tensors to the existing ones with `torch.cat(..., dim=-2)`. Either way, it returns the complete keys and values for that layer.
+
+The cache is used in two phases:
+
+**Prefill:** The model processes the entire prompt in one pass. After prefill, each layer has cached the keys and values for all 266 prompt tokens.
+
+**Decode:** The model processes one new token per step, adds that token's keys and values to the cache and reuses everything already stored.
+
+#### Proof that the cache changes nothing
+
+A KV cache is useful only if it produces the same results as processing the full sequence. We test that with a small attention layer and 10 made up tokens of 16 numbers each.
+
+The `attend` function implements the attention calculation from chapter 5, and also accepts an optional mask, which we will explain in the next section. For this test, `causal` prevents each token from attending to tokens that come after it.
+
+```
+                  q                 k and v            scores
+  all at once     [1, 1, 10, 16]   [1, 1, 10, 16]     [1, 1, 10, 10]
+  prefill         [1, 1, 6, 16]    [1, 1, 6, 16]      [1, 1, 6, 6]
+  decode step 6   [1, 1, 1, 16]    [1, 1, 7, 16]      [1, 1, 1, 7]
+  ...
+  ...
+  decode step 9   [1, 1, 1, 16]    [1, 1, 10, 16]     [1, 1, 1, 10]
+```
+
+![cache scores](fig/ch8-cache-scores.svg)
+
+We do not need a causal mask during decoding because the cache contains only tokens from the prompt and tokens generated so far. It never contains future tokens, so the cache enforces the causal restriction by itself.
+
+```python
+class KVCache:
+    def __init__(self):
+        self.key_cache = []                                          # one tensor per layer, [B, H_kv, T, head_dim]
+        self.value_cache = []
+
+    def num_items(self):
+        if len(self.key_cache) == 0:
+            return 0
+        return self.key_cache[0].shape[-2]
+
+    def update(self, key_states, value_states, layer_idx):
+        if len(self.key_cache) <= layer_idx:
+            self.key_cache.append(key_states)
+            self.value_cache.append(value_states)
+        else:
+            self.key_cache[layer_idx] = torch.cat([self.key_cache[layer_idx], key_states], dim=-2)       # [B, H, T+1, d_h]
+            self.value_cache[layer_idx] = torch.cat([self.value_cache[layer_idx], value_states], dim=-2) # [B, H, T+1, d_h]
+        return self.key_cache[layer_idx], self.value_cache[layer_idx]
+
+torch.manual_seed(0)
+T, d_h, prompt_len = 10, 16, 6
+x = torch.randn(1, T, d_h)                                           # [1, 10, 16], ten made up tokens
+q_proj, k_proj, v_proj = (nn.Linear(d_h, d_h, bias=False) for _ in range(3))
+heads = lambda t: t.unsqueeze(1)                                     # [B, T, d_h] -> [B, 1, T, d_h], one head
+
+def attend(q, k, v, mask=None):
+    scores = q @ k.transpose(-2, -1) / d_h ** 0.5                    # [B, 1, q_len, kv_len]
+    if mask is not None:
+        scores = scores + mask
+    return F.softmax(scores, dim=-1) @ v                             # [B, 1, q_len, d_h]
+
+with torch.no_grad():
+    causal = torch.full((T, T), float("-inf")).triu(1)               # [10, 10], blocks the future
+    full = attend(heads(q_proj(x)), heads(k_proj(x)), heads(v_proj(x)), causal)   # [1, 1, 10, 16], all at once
+
+    cache = KVCache()
+    p = x[:, :prompt_len]                                            # prefill: the whole prompt in one pass
+    k, v = cache.update(heads(k_proj(p)), heads(v_proj(p)), layer_idx=0)
+    prefill = attend(heads(q_proj(p)), k, v, causal[:prompt_len, :prompt_len])
+    print(f"after prefill: {cache.num_items()} tokens cached, outputs match: "
+          f"{torch.allclose(prefill, full[:, :, :prompt_len], atol=1e-6)}")
+
+    for t in range(prompt_len, T):                                   # decode: one new token per step
+        new = x[:, t:t + 1]                                          # [1, 1, 16]
+        k, v = cache.update(heads(k_proj(new)), heads(v_proj(new)), layer_idx=0)
+        out = attend(heads(q_proj(new)), k, v)                       # [1, 1, 1, 16], one query, no mask needed
+        print(f"step {t}: q length 1, k length {k.shape[-2]}, "
+              f"same as the full pass: {torch.allclose(out[:, :, 0], full[:, :, t], atol=1e-6)}")
+```
+
+**Output:**
+
+```
+after prefill: 6 tokens cached, outputs match: True
+step 6: q length 1, k length 7, same as the full pass: True
+step 7: q length 1, k length 8, same as the full pass: True
+step 8: q length 1, k length 9, same as the full pass: True
+step 9: q length 1, k length 10, same as the full pass: True
+```
+
+We use a tolerance of $10^{-6}$ because floating point calculations can produce tiny differences when the same operations run in a different order.
+
+### The attention mask
+
+This attention mask is different from the processor's `attention_mask` in chapter 6. That mask has shape `[B, T]` and uses ones and zeros to identify real tokens and padding.
+
+The mask we are building here controls attention inside the language model, It has the same query and key dimensions as the attention score matrix. A value of 0 means that a query can attend to a key, and a very large negative value means that it cannot.
+
+We add the mask to the scaled attention scores before applying softmax:
+
+$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^\top}{\sqrt{d_h}} + M\right)V$$
+
+Why add the mask instead of multiplying by it? Because of how softmax works, it exponentiates each score and then normalizes the results so that the weights sum to 1.
+
+Adding 0 leaves a score unchanged, while adding $-\infty$ makes its exponential zero, because $e^{-\infty} = 0$, so the corresponding key gets an attention weight of exactly zero.
+
+For example, suppose the scores are `[2, 1, 3]` and the mask is `[0, 0, -∞]`. The third key is blocked, so its exponential becomes zero.
+The other two exponentials are about 7.389 and 2.718, and their sum, 10.107, gives
+
+$$\left[\frac{7.389}{10.107}, \frac{2.718}{10.107}, \frac{0}{10.107}\right] \approx [0.731, 0.269, 0]$$
+
+Even though the third key had the highest original score, it receives no attention because the mask blocks it, the other two weights are exactly the scores 2 and 1 without the third key.
+
+#### The causal mask
+
+When a language model processes a complete text sequence in one pass, it normally uses a **causal mask**. This mask lets each token attend to itself and all earlier tokens, but not to any later tokens.
+
+Mathematically, the mask is defined as
+
+$$M_{ij} = \begin{cases} 0 & \text{if } j \le i \\ -\infty & \text{if } j > i \end{cases}$$
+
+Here, $i$ is the query position, represented by the row, and $j$ is the key position, represented by the column.
+
+For three tokens, the mask is
+
+$$M = \begin{pmatrix} 0 & -\infty & -\infty \\ 0 & 0 & -\infty \\ 0 & 0 & 0 \end{pmatrix}$$
+
+The first row lets token 0 read only itself, the second row lets token 1 read tokens 0 and 1, and the third row lets token 2 read all three tokens.
+
+`torch.full((T, T), value).triu(1)` creates a matrix filled with the chosen value, then keeps that value only above the diagonal. The diagonal and everything below it become zero.
+
+In practice, implementations often use `torch.finfo(torch.float32).min` instead of $-\infty$, the most negative 32 bit floating point value, about $-3.4 \times 10^{38}$.
+
+There is a numerical reason for this choice, stable softmax usually subtracts the maximum score in each row before calculating the exponentials. If every score in a row is $-\infty$, that subtraction produces $-\infty - (-\infty)$, which is `NaN`. Using the smallest finite value avoids this particular problem, although fully masked rows still need careful handling.
+
+Inside our language model the attention scores have shape `[B, H, q, k]`, where the dimensions represent the batch, attention heads, queries, and keys. The mask has shape `[B, 1, q, k]`, its head dimension of 1 broadcasts across all attention heads.
+### Causal or prefix
+
+
+![causal vs prefix mask](fig/ch8-causal-vs-prefix-mask.svg)
+
+
+_What would a causal mask do to our dog prompt?_ The prompt contains 256 image tokens at positions 0 through 255, followed by 10 text tokens at positions 256 through 265. These are `<bos>`, the 8 prompt pieces and the newline.
+
+We numbered the image patches row by row, so position 0 is the top left patch of the photo.
+
+With a causal mask, that first image token could attend only to itself, not to later patches such as those covering the dog's ear or snout.
+
+The mask would also prevent every image token from attending to the text, because all the text tokens come after the image, so the image would have no direct access to the question.
+
+We can count the blocked cells, which fall into three groups:
+
+**Image tokens blocked from attending to later image tokens:** $$\frac{256 \cdot 255}{2} = 32{,}640$$
+
+**Image tokens blocked from attending to text tokens:** $$256 \cdot 10 = 2{,}560$$
+
+**Text tokens blocked from attending to later text tokens**: $$\frac{10 \cdot 9}{2} = 45$$
+
+Together these account for $32{,}640 + 2{,}560 + 45 = 35{,}245$ blocked cells, exactly the number of cells above the diagonal of a $266 \times 266$ matrix:
+
+$$\frac{266 \cdot 265}{2} = 35{,}245$$
+
+However, this is not what we want. The vision encoder was designed so that every patch can gather information from every other patch.
+
+#### The prefix mask
+
+PaliGemma uses a different attention pattern, In chapter 6 (leaving seats for the image) we discussed how the PaliGemma paper ([Beyer et al., 2024](https://arxiv.org/abs/2407.07726)) divides the input into a **prefix** and a **suffix**.
+
+The prefix contains the image and prompt, while the suffix contains the answer.
+
+For attention, PaliGemma allows every token in the prefix to attend to every other prefix token. The answer tokens follow causal attention: each can attend to the prefix and to the answer tokens before it, but not to future answer tokens.
+
+This attention pattern is called a **prefix mask**, and a language model trained to use it is called a **Prefix Language Model**, or **prefix LM**.
+
+_Why is this allowed?_ The model is not asked to predict the prefix, the image and question are given as input, and the model only needs to predict the answer. Allowing all prefix tokens to attend to each other lets the image and question exchange information before the model generates its answer.
+
+During decoding, the answer remains causal without needing an explicit causal mask.
+
+For our implementation, this means the mask is all zeros during both prefill and decoding. During prefill its shape is `[B, 1, 266, 266]`, and during the first decoding step it is `[B, 1, 1, 267]`: one query attending to the 266 cached prompt tokens and its own key.
+
+Our mask also does not block padding tokens, which is fine for the single dog prompt because it has no padding. A batch containing padded sequences would need an additional mask to block the padding columns.
+
+The following code builds both masks for the dog prompt. `T` is 266 rather than the 10 used in our earlier test, and the variable `decode_row` holds the mask for the first decoding step.
+
+The expression `(causal != 0).sum()` counts the blocked cells, and the plot shows allowed positions in green.
+
+```python
+ids = inputs["input_ids"][0]                                         # [266], from chapter 6
+T = ids.shape[0]
+blocked = torch.finfo(torch.float32).min                             # stands in for minus infinity
+
+causal = torch.full((T, T), blocked).triu(1)                         # [266, 266]
+prefix = torch.zeros(T, T)                                           # [266, 266], everyone sees everyone
+decode_row = torch.zeros(1, T + 1)                                   # [1, 267], the first new token sees all 266 plus itself
+
+print("cells blocked, causal:", int((causal != 0).sum()), "| prefix:", int((prefix != 0).sum()))
+print("decode row shape:", tuple(decode_row.shape))
+
+fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+for a, m, title in zip(ax, [causal, prefix], ["causal mask", "prefix mask (ours)"]):
+    a.imshow((m == 0).numpy(), cmap="Greens", vmin=0, vmax=1)
+    a.axvline(n_img - 0.5, c="orange"); a.axhline(n_img - 0.5, c="orange")   # image | text boundary
+    a.set_title(f"{title}, green = allowed"); a.set_xlabel("key"); a.set_ylabel("query")
+plt.tight_layout(); plt.show()
+```
+
+**Output:**
+
+```
+cells blocked, causal: 35245 | prefix: 0
+decode row shape: (1, 267)
+```
+
+![causal and prefix mask output](fig/ch8-mask-output.png)
+
+![causal vs prefix mask](fig/ch8-causal-vs-prefix-mask.svg)
+
+### Position IDs
+
+The attention mask tells the model which tokens can attend to each other, but not where each token sits in the sequence.
+
+As we saw earlier, attention by itself does not encode token order. Without positional information, the model would struggle to distinguish sequences such as "dog bites man" and "man bites dog".
+
+![ch8 position](fig/ch8-position.png)
+
+The language model therefore needs a position ID for every token, which is an integer that identifies a token's position in the sequence. Instead of adding position vectors to the token embeddings, as the encoder did, Gemma uses position IDs with **rotary positional embeddings**, or **RoPE**. We will implement RoPE when we build the attention layers.
+
+We calculate the position IDs from the processor's `attention_mask` using a **cumulative sum**, which replaces each entry with the sum of that entry and all entries before it.
+
+For a sequence without padding, the mask `[1, 1, 1, 1]` becomes `[1, 2, 3, 4]`. The position IDs start at 1, matching the convention used in PaliGemma's code.
+
+Now take a sequence with two padding tokens on the left. Its mask `[0, 0, 1, 1, 1]` has the cumulative sum `[0, 0, 1, 2, 3]`, so the real tokens still receive positions 1, 2 and 3.
+
+We then use `masked_fill_(mask == 0, 1)` to replace the zeros at padded positions with 1.
+The final position IDs become `[1, 1, 1, 2, 3]`. The trailing underscore in `masked_fill_` means the operation modifies the tensor in place.
+
+The first real token always receives position 1, regardless of how much padding comes before it.
+
+During decoding, we append a 1 to the `attention_mask` for each new token, compute the cumulative sum and take its last value with `cumsum(-1)[:, -1]`, which gives the position ID of the newest token.
+
+For the dog prompt, the first new token receives position **267** because, the 266 prompt tokens occupy positions 1 through 266.
+
+Let's take the padded batch from chapter 7 as an example. The shorter row, `"caption en"`, contains six padding tokens and 260 real tokens, and its next token receives position 261. Because the batch uses left padding, both rows place their next token in the final column, immediately after their respective prompt endings.
+
+With right padding, the shorter sequence would end with padding tokens, so its next token would appear after them instead of right after the prompt. Left padding avoids that problem during batched generation.
+
+The variable `mask_next` represents the attention mask after adding one new token.
+
+```python
+mask = inputs["attention_mask"]                                      # [1, 266], all ones
+pos = mask.cumsum(-1).masked_fill_(mask == 0, 1)                     # [1, 266]
+print("prefill positions, first 3 and last 3:", pos[0, :3].tolist(), pos[0, -3:].tolist())
+
+mask_next = torch.cat([mask, torch.ones(1, 1, dtype=mask.dtype)], dim=-1)   # [1, 267], one more token
+print("first decode step position:", mask_next.cumsum(-1)[:, -1].tolist())
+
+b_mask = batch["attention_mask"]                                     # the padded batch from chapter 7
+b_pos = b_mask.cumsum(-1).masked_fill_(b_mask == 0, 1)
+print("padding side:", tokenizer.padding_side)
+for row in range(2):
+    print(f"row {row}: mask first 3 {b_mask[row, :3].tolist()}, last 3 {b_mask[row, -3:].tolist()} | "
+          f"positions first 3 {b_pos[row, :3].tolist()}, last 3 {b_pos[row, -3:].tolist()}")
+```
+
+**Output:**
+
+```
+prefill positions, first 3 and last 3: [1, 2, 3] [264, 265, 266]
+first decode step position: [267]
+padding side: left
+row 0: mask first 3 [1, 1, 1], last 3 [1, 1, 1] | positions first 3 [1, 2, 3], last 3 [264, 265, 266]
+row 1: mask first 3 [0, 0, 0], last 3 [1, 1, 1] | positions first 3 [1, 1, 1], last 3 [258, 259, 260]
+```
+
+![position ids](fig/ch8-position-ids.svg)
+
+### The full merge
+
+In chapter 7 we built `merge_input_ids_with_image_features`, which combines the image features and text embeddings into one sequence. We now extend it so it also prepares the attention mask and the position IDs.
+
+As we did with `VisionAttention`, we replace the earlier definition with a new one. The function takes two extra inputs and returns three outputs instead of one, while the embedding logic stays the same.
+
+During prefill, there is no cache yet or it is empty. Every prefix token can attend to every other one, so the function creates an all zero mask of shape `[B, q, q]`.
+
+During decoding, the cache already contains the prompt and previously generated tokens. The function checks with `assert q_len == 1` that the current input contains exactly one new token.
+
+It then calculates `kv_len = kv_cache.num_items() + q_len`, the number of cached tokens plus the new one. The new token’s key and value will be added to the cache later, but the mask must already have a column for them.
+
+The decoding mask therefore has shape `[B, 1, kv]`. Calling `unsqueeze(1)` adds the head dimension, giving the final shape `[B, 1, q, kv]`.
+
+TThe position IDs also depend on the phase. During prefill, the function calculates them for the entire sequence, producing shape `[B, T]`. During decoding, it takes only the last cumulative sum value of each batch row, producing shape `[B]`. The extra `unsqueeze(0)` turns this into `[1, B]`, which is `[1, 1]` for our single prompt.
+
+To test the decoding branch, we need a cache that already contains the 266 prompt tokens. We create `fake_cache` and fill its first layer with zero tensors of shape `[1, 1, 266, 256]`, which is enough for `num_items` to report 266 cached tokens.
+
+Our next token is `▁brown`, the example answer token we used earlier. Its `input_ids` tensor has shape `[1, 1]` because it contains only the new token. The `attention_mask`, however, is `mask_next`, with shape `[1, 267]`, because it represents the complete sequence, including the new token.
+
+```python
+def merge_input_ids_with_image_features(image_features, inputs_embeds, input_ids, attention_mask, config, kv_cache=None):
+    _, _, embed_dim = image_features.shape
+    batch_size, sequence_length = input_ids.shape
+    dtype, device = inputs_embeds.dtype, inputs_embeds.device
+    pad_token_id = config.pad_token_id if config.pad_token_id is not None else -1
+
+    scaled_image_features = image_features / (config.hidden_size ** 0.5)
+    final_embedding = torch.zeros(batch_size, sequence_length, embed_dim, dtype=dtype, device=device)
+
+    text_mask = (input_ids != config.image_token_index) & (input_ids != pad_token_id)   # [B, T]
+    image_mask = input_ids == config.image_token_index                                   # [B, T]
+    pad_mask = input_ids == pad_token_id                                                 # [B, T]
+
+    text_mask_expanded = text_mask.unsqueeze(-1).expand(-1, -1, embed_dim)              # [B, T, D]
+    image_mask_expanded = image_mask.unsqueeze(-1).expand(-1, -1, embed_dim)            # [B, T, D]
+    pad_mask_expanded = pad_mask.unsqueeze(-1).expand(-1, -1, embed_dim)                # [B, T, D]
+
+    final_embedding = torch.where(text_mask_expanded, inputs_embeds, final_embedding)
+    final_embedding = final_embedding.masked_scatter(image_mask_expanded, scaled_image_features)
+    final_embedding = torch.where(pad_mask_expanded, torch.zeros_like(final_embedding), final_embedding)
+
+    q_len = inputs_embeds.shape[1]
+    if kv_cache is None or kv_cache.num_items() == 0:
+        # prefill, every token sees every token
+        causal_mask = torch.full((batch_size, q_len, q_len), fill_value=0, dtype=dtype, device=device)
+    else:
+        # decoding, one new query that sees everything cached plus itself
+        assert q_len == 1
+        kv_len = kv_cache.num_items() + q_len
+        causal_mask = torch.full((batch_size, q_len, kv_len), fill_value=0, dtype=dtype, device=device)
+    causal_mask = causal_mask.unsqueeze(1)                           # [B, 1, q_len, kv_len], one mask for all heads
+
+    if kv_cache is not None and kv_cache.num_items() > 0:
+        position_ids = attention_mask.cumsum(-1)[:, -1]              # [B], the new token's position
+        if position_ids.dim() == 1:
+            position_ids = position_ids.unsqueeze(0)
+    else:
+        position_ids = attention_mask.cumsum(-1).masked_fill_((attention_mask == 0), 1).to(device)   # [B, T]
+
+    return final_embedding, causal_mask, position_ids
+
+with torch.no_grad():
+    emb, m, p = merge_input_ids_with_image_features(
+        projected, inputs_embeds, inputs["input_ids"], inputs["attention_mask"], cfg)
+print("prefill: embeddings", tuple(emb.shape), "| mask", tuple(m.shape), "all zero:", bool((m == 0).all()),
+      "| positions", p[0, 0].item(), "to", p[0, -1].item())
+
+fake_cache = KVCache()                                               # pretend the 266 prompt tokens are cached
+t_cfg = cfg.text_config
+fake_cache.update(torch.zeros(1, t_cfg.num_key_value_heads, T, t_cfg.head_dim),
+                  torch.zeros(1, t_cfg.num_key_value_heads, T, t_cfg.head_dim), layer_idx=0)
+new_id = torch.tensor([[tokenizer.convert_tokens_to_ids("▁brown")]])                    # [1, 1], one new token
+with torch.no_grad():
+    emb, m, p = merge_input_ids_with_image_features(
+        projected, embed_tokens(new_id), new_id, mask_next, cfg, kv_cache=fake_cache)
+print("decode:  embeddings", tuple(emb.shape), "| mask", tuple(m.shape), "| position", p.tolist())
+```
+
+**Output:**
+
+```
+prefill: embeddings (1, 266, 2048) | mask (1, 1, 266, 266) all zero: True | positions 1 to 266
+decode:  embeddings (1, 1, 2048) | mask (1, 1, 1, 267) | position [[267]]
+```
+
+We now have the three things the language model needs: the input vectors, the attention mask and the position IDs.
+
+### How big the cache gets
+
+The KV cache saves computation, but it costs memory. Each layer stores a key and a value for every token, and each of those holds $H_{kv} \cdot d_h$ numbers.
+
+The total cache memory is $$\text{bytes} = L \cdot 2 \cdot H_{kv} \cdot d_h \cdot T \cdot \text{bytes per number}$$
+$L$ is the number of layers, the factor of 2 accounts for keys and values, $H_{kv}$ is the number of key-value heads, $d_h$ is the head dimension, and $T$ is the number of cached tokens.
+
+Gemma, our real language model, has 18 layers, one key value head and a head dimension of 256
+$$18 \cdot 2 \cdot 1 \cdot 256 = 9{,}216$$
+
+For 1,000 tokens stored in `float16`, at 2 bytes per number, the cache needs:
+$$9{,}216 \cdot 1000 \cdot 2 = 18{,}432{,}000~\text{bytes}$$ or 18.4 MB.
+
+For the 266-token dog prompt stored in `float32`, at 4 bytes per number, the cache needs: $$9{,}216 \cdot 266 \cdot 4 = 9{,}805{,}824~\text{bytes}$$ or 9.8 MB.
+
+The following code calculates these values from the model configuration, then fills a cache for the dog prompt and measures its actual memory.
+
+```python
+t_cfg = cfg.text_config
+per_token = t_cfg.num_hidden_layers * 2 * t_cfg.num_key_value_heads * t_cfg.head_dim   # numbers stored per token
+print(f"numbers per token: {per_token:,}")
+for T_, bytes_per, name in [(1000, 2, "float16"), (T, 4, "float32")]:
+    print(f"{T_:5d} tokens in {name}: {per_token * T_ * bytes_per:,} bytes")
+
+c = KVCache()                                                        # the same count, from real tensors
+for layer in range(t_cfg.num_hidden_layers):
+    c.update(torch.zeros(1, t_cfg.num_key_value_heads, T, t_cfg.head_dim, dtype=torch.float32),
+             torch.zeros(1, t_cfg.num_key_value_heads, T, t_cfg.head_dim, dtype=torch.float32), layer)
+measured = sum(t.numel() * t.element_size() for t in c.key_cache + c.value_cache)
+print(f"measured from a filled cache for the dog prompt: {measured:,} bytes")
+```
+
+**Output:**
+
+```
+numbers per token: 9,216
+	1000 tokens in float16: 18,432,000 bytes
+	266 tokens in float32: 9,805,824 bytes
+measured from a filled cache for the dog prompt: 9,805,824 bytes
+```
+
+Compared with the model's **11.7 GB** of weights, the cache for the dog prompt is small, using less than 0.1% of that amount.
+
+However, cache memory grows with every token. At the maximum sequence length of 8192 positions allowed by our `TextConfig`, the cache uses
+
+$$9{,}216 \cdot 8192 \cdot 4 = 301{,}989{,}888~\text{bytes}$$
+
+or about 302 MB per sequence in `float32`.
+
+One reason Gemma's cache is relatively small is that it uses just one key value head, shared by its eight query heads. With eight key value heads, the cache would be eight times larger. We will see how this sharing works when we implement the language model's attention layer.
+
+### Where the new pieces sit
+
+```
+  photo, "answer en what color is the dog?"
+
+  processor              pixel_values [1, 3, 224, 224], input_ids [1, 266], attention_mask [1, 266]
+  vision_tower, projector, embed_tokens, as in chapter 7
+  merge, prefill
+    final_embedding      [1, 266, 2048]
+    causal_mask          [1, 1, 266, 266], all zeros, the prefix mask
+    position_ids         [1, 266], 1 to 266
+  merge, each decode step
+    final_embedding      [1, 1, 2048], the new token only
+    causal_mask          [1, 1, 1, 267], then 268, 269, ...
+    position_ids         [[267]], then 268, 269, ...
+  KVCache                per layer, keys and values [1, 1, T, 256]; T = 266 after prefill, then + 1 per step
+  language model         not built yet, it will fill the cache and read the mask and the positions
+```
+
+![ch8 so far](fig/ch8-so-far.svg)
+
+**The updated merge function returns the input vectors, attention mask, and position IDs. During prefill, it prepares the whole prompt. During decoding, it prepares only the newest token.**
+
+Think back to our room example once more, Everyone who arrived with the prompt can now read everyone else's name tag. Each new arrival gets a position number, and the already prepared keys and values stay on the table for later arrivals to use.
+
+But one piece is still missing, nothing yet processes the 266 vectors, writes their keys and values into the cache, or turns the output at the newline into a prediction.
+
+That is what we will build in the next chapter. We will implement the decoder layer, including its normalization and MLP, and then stack 18 of them into the language model.
+
+---
