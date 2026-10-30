@@ -1,0 +1,209 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400">
+<!--
+  Font block pending: paste the licence comment and the three @font-face rules
+  from the earlier ch9-gated-mlp.svg at the top of the style element below.
+  Until then the figure renders in the reader's system fonts.
+-->
+<style>
+text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-weight: 400; }
+.mono, .title { font-family: 'Geist Mono', Inter, ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-ligatures: none; }
+.title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.sub { font-size: 12px; }
+.strong { font-weight: 500; }
+</style>
+<title>The gated MLP: x splits into gate_proj and up_proj, GELU squeezes the gate, the two are multiplied column by column so small gates close their taps, and down_proj brings the product back to 2048</title>
+
+<!-- title -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.8s" begin="0s;replay_ch9_gated_mlp.click+0s" fill="freeze"/>
+  <text x="360" y="30" class="title" text-anchor="middle" fill="#78716c">The gated MLP</text>
+  <text x="360" y="50" class="sub mono" text-anchor="middle" fill="#78716c">down_proj( GELU(gate_proj(x)) ⊙ up_proj(x) )</text>
+</g>
+
+<!-- the input and the two paths it splits into -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.3s;replay_ch9_gated_mlp.click+0.3s" fill="freeze"/>
+  <text x="47" y="130" text-anchor="middle" font-size="10" class="mono" fill="#78716c">x</text>
+  <rect x="40" y="136" width="14" height="40" rx="2" fill="#7dd3fc" stroke="#7dd3fc"/>
+  <text x="47" y="188" text-anchor="middle" font-size="9" class="mono" fill="#78716c">2048</text>
+</g>
+<path d="M 54 156 L 66 156 L 66 110 L 80 110" fill="none" stroke="#78716c" stroke-dasharray="72" stroke-dashoffset="72"><set attributeName="stroke-dashoffset" to="72" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="72" to="0" dur="0.4s" begin="0.6s;replay_ch9_gated_mlp.click+0.6s" fill="freeze"/></path>
+<path d="M 54 156 L 66 156 L 66 200 L 80 200" fill="none" stroke="#78716c" stroke-dasharray="70" stroke-dashoffset="70"><set attributeName="stroke-dashoffset" to="70" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="70" to="0" dur="0.4s" begin="0.6s;replay_ch9_gated_mlp.click+0.6s" fill="freeze"/></path>
+
+<!-- row A: the gate path -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.9s;replay_ch9_gated_mlp.click+0.9s" fill="freeze"/>
+  <line x1="196" y1="110" x2="544" y2="110" stroke="#78716c" stroke-width="0.8"/>
+  <text x="84" y="121" font-size="9" class="mono" fill="#78716c">2048 → 16384</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.9s;replay_ch9_gated_mlp.click+0.9s" fill="freeze"/><animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" fill="freeze"/>
+  <text x="84" y="107" font-size="10" class="mono" fill="#78716c">gate_proj(x)</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="3.1s;replay_ch9_gated_mlp.click+3.1s" fill="freeze"/>
+  <text x="84" y="107" font-size="10" class="mono" fill="#78716c">GELU(gate)</text>
+</g>
+
+<rect x="206" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="32" dur="0.4s" begin="1.0s;replay_ch9_gated_mlp.click+1.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="32" to="0.8" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="266" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="110" to="105.2" dur="0.4s" begin="1.08s;replay_ch9_gated_mlp.click+1.08s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="4.8" dur="0.4s" begin="1.08s;replay_ch9_gated_mlp.click+1.08s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="105.2" to="106.96" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="4.8" to="3.04" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="326" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="110" to="86" dur="0.4s" begin="1.16s;replay_ch9_gated_mlp.click+1.16s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.4s" begin="1.16s;replay_ch9_gated_mlp.click+1.16s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="86" to="87.6" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="24" to="22.4" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="386" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="12.8" dur="0.4s" begin="1.24s;replay_ch9_gated_mlp.click+1.24s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="12.8" to="2.72" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="446" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="110" to="71.6" dur="0.4s" begin="1.32s;replay_ch9_gated_mlp.click+1.32s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="38.4" dur="0.4s" begin="1.32s;replay_ch9_gated_mlp.click+1.32s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="71.6" to="71.92" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="38.4" to="38.08" dur="0.8s" begin="2.8s;replay_ch9_gated_mlp.click+2.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="506" y="110" width="28" height="0" rx="2" fill="#fed7aa" stroke="#fed7aa"><set attributeName="y" to="110" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="110" to="109.5" dur="0.4s" begin="1.4s;replay_ch9_gated_mlp.click+1.4s" fill="freeze"/>
+  <animate attributeName="height" from="0" to="1" dur="0.4s" begin="1.4s;replay_ch9_gated_mlp.click+1.4s" fill="freeze"/></rect>
+
+<!-- row A values: the gate, then GELU of the gate -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="1.5s;replay_ch9_gated_mlp.click+1.5s" fill="freeze"/><animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="2.9s;replay_ch9_gated_mlp.click+2.9s" fill="freeze"/>
+  <text x="220" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−2.00</text>
+  <text x="280" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.30</text>
+  <text x="340" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">1.50</text>
+  <text x="400" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.80</text>
+  <text x="460" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">2.40</text>
+  <text x="520" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.00</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="3.3s;replay_ch9_gated_mlp.click+3.3s" fill="freeze"/>
+  <text x="220" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.05</text>
+  <text x="280" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.19</text>
+  <text x="340" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">1.40</text>
+  <text x="400" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.17</text>
+  <text x="460" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">2.38</text>
+  <text x="520" y="66" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.00</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="3.2s;replay_ch9_gated_mlp.click+3.2s" fill="freeze"/>
+  <text x="556" y="104" font-size="9.5" fill="#78716c">GELU squeezes</text>
+  <text x="556" y="117" font-size="9.5" fill="#78716c">negatives toward 0</text>
+</g>
+
+<!-- row B: the up path -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="1.6s;replay_ch9_gated_mlp.click+1.6s" fill="freeze"/>
+  <line x1="196" y1="200" x2="544" y2="200" stroke="#78716c" stroke-width="0.8"/>
+  <text x="84" y="197" font-size="10" class="mono" fill="#78716c">up_proj(x)</text>
+  <text x="84" y="211" font-size="9" class="mono" fill="#78716c">2048 → 16384</text>
+</g>
+<rect x="206" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="y" to="200" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="200" to="180.8" dur="0.4s" begin="1.7s;replay_ch9_gated_mlp.click+1.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="19.2" dur="0.4s" begin="1.7s;replay_ch9_gated_mlp.click+1.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="266" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="11.2" dur="0.4s" begin="1.78s;replay_ch9_gated_mlp.click+1.78s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="326" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="y" to="200" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="200" to="185.6" dur="0.4s" begin="1.86s;replay_ch9_gated_mlp.click+1.86s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="14.4" dur="0.4s" begin="1.86s;replay_ch9_gated_mlp.click+1.86s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="386" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="y" to="200" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="200" to="176" dur="0.4s" begin="1.94s;replay_ch9_gated_mlp.click+1.94s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.4s" begin="1.94s;replay_ch9_gated_mlp.click+1.94s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="446" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="6.4" dur="0.4s" begin="2.02s;replay_ch9_gated_mlp.click+2.02s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="506" y="200" width="28" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="y" to="200" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="200" to="168" dur="0.4s" begin="2.1s;replay_ch9_gated_mlp.click+2.1s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="32" dur="0.4s" begin="2.1s;replay_ch9_gated_mlp.click+2.1s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="2.3s;replay_ch9_gated_mlp.click+2.3s" fill="freeze"/>
+  <text x="220" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">1.20</text>
+  <text x="280" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.70</text>
+  <text x="340" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.90</text>
+  <text x="400" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">1.50</text>
+  <text x="460" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.40</text>
+  <text x="520" y="160" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">2.00</text>
+  <text x="556" y="204" font-size="9.5" fill="#78716c">what could flow</text>
+</g>
+
+<!-- row C: the product, one column at a time -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="4.0s;replay_ch9_gated_mlp.click+4.0s" fill="freeze"/>
+  <line x1="196" y1="290" x2="544" y2="290" stroke="#78716c" stroke-width="0.8"/>
+  <text x="84" y="287" font-size="10" fill="#78716c">the product</text>
+  <text x="84" y="301" font-size="9" class="mono" fill="#78716c">⊙ element by element</text>
+</g>
+
+<rect x="196" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="4.3s;replay_ch9_gated_mlp.click+4.3s" fill="freeze"/></rect>
+<rect x="256" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="4.65s;replay_ch9_gated_mlp.click+4.65s" fill="freeze"/></rect>
+<rect x="316" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="5.0s;replay_ch9_gated_mlp.click+5.0s" fill="freeze"/></rect>
+<rect x="376" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="5.35s;replay_ch9_gated_mlp.click+5.35s" fill="freeze"/></rect>
+<rect x="436" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="5.7s;replay_ch9_gated_mlp.click+5.7s" fill="freeze"/></rect>
+<rect x="496" y="60" width="48" height="254" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="6.05s;replay_ch9_gated_mlp.click+6.05s" fill="freeze"/></rect>
+
+<rect x="206" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="0.8" dur="0.3s" begin="4.45s;replay_ch9_gated_mlp.click+4.45s" fill="freeze"/></rect>
+<rect x="266" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="2.08" dur="0.3s" begin="4.8s;replay_ch9_gated_mlp.click+4.8s" fill="freeze"/></rect>
+<rect x="326" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="y" to="290" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="290" to="269.84" dur="0.3s" begin="5.15s;replay_ch9_gated_mlp.click+5.15s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="20.16" dur="0.3s" begin="5.15s;replay_ch9_gated_mlp.click+5.15s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="386" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="4" dur="0.3s" begin="5.5s;replay_ch9_gated_mlp.click+5.5s" fill="freeze"/></rect>
+<rect x="446" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="height" from="0" to="15.2" dur="0.3s" begin="5.85s;replay_ch9_gated_mlp.click+5.85s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<rect x="506" y="290" width="28" height="0" rx="2" fill="#fcd34d" stroke="#fcd34d"><set attributeName="y" to="290" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="290" to="289.5" dur="0.3s" begin="6.2s;replay_ch9_gated_mlp.click+6.2s" fill="freeze"/>
+  <animate attributeName="height" from="0" to="1" dur="0.3s" begin="6.2s;replay_ch9_gated_mlp.click+6.2s" fill="freeze"/></rect>
+
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="4.6s;replay_ch9_gated_mlp.click+4.6s" fill="freeze"/>
+  <text x="220" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.05</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="4.95s;replay_ch9_gated_mlp.click+4.95s" fill="freeze"/>
+  <text x="280" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.13</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="5.3s;replay_ch9_gated_mlp.click+5.3s" fill="freeze"/>
+  <text x="340" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">1.26</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="5.65s;replay_ch9_gated_mlp.click+5.65s" fill="freeze"/>
+  <text x="400" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.25</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="6.0s;replay_ch9_gated_mlp.click+6.0s" fill="freeze"/>
+  <text x="460" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">−0.95</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="6.35s;replay_ch9_gated_mlp.click+6.35s" fill="freeze"/>
+  <text x="520" y="254" text-anchor="middle" font-size="9.5" class="mono" fill="#78716c">0.00</text>
+</g>
+
+<!-- the closed taps -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="6.7s;replay_ch9_gated_mlp.click+6.7s" fill="freeze"/>
+  <rect x="202" y="280" width="36" height="20" rx="2" fill="#f97316" fill-opacity="0.14" stroke="#f97316" stroke-width="2.5"/>
+  <rect x="502" y="280" width="36" height="20" rx="2" fill="#f97316" fill-opacity="0.14" stroke="#f97316" stroke-width="2.5"/>
+  <text x="360" y="334" text-anchor="middle" font-size="10" fill="#78716c">gates of −0.05 and 0.00 close their taps, a gate of 2.38 lets its number through, scaled up</text>
+</g>
+
+<!-- down_proj brings it back -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="7.3s;replay_ch9_gated_mlp.click+7.3s" fill="freeze"/>
+  <line x1="548" y1="290" x2="570" y2="290" stroke="#78716c"/>
+  <path d="M 565 286 L 570 290 L 565 294" fill="none" stroke="#78716c"/>
+</g>
+<rect x="572" y="277" width="0" height="26" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="width" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="width" from="0" to="78" dur="0.4s" begin="7.5s;replay_ch9_gated_mlp.click+7.5s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="7.8s;replay_ch9_gated_mlp.click+7.8s" fill="freeze"/>
+  <text x="611" y="294" text-anchor="middle" font-size="10" class="mono" fill="#0c0a09">down_proj</text>
+  <text x="611" y="316" text-anchor="middle" font-size="9" class="mono" fill="#78716c">16384 → 2048</text>
+  <line x1="650" y1="290" x2="660" y2="290" stroke="#78716c"/>
+  <path d="M 655 286 L 660 290 L 655 294" fill="none" stroke="#78716c"/>
+</g>
+<rect x="662" y="290" width="14" height="0" rx="2" fill="#7dd3fc" stroke="#7dd3fc"><set attributeName="y" to="290" begin="replay_ch9_gated_mlp.click" fill="freeze"/><set attributeName="height" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/>
+  <animate attributeName="y" from="290" to="270" dur="0.4s" begin="8.0s;replay_ch9_gated_mlp.click+8.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="40" dur="0.4s" begin="8.0s;replay_ch9_gated_mlp.click+8.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="8.2s;replay_ch9_gated_mlp.click+8.2s" fill="freeze"/>
+  <text x="669" y="324" text-anchor="middle" font-size="9" class="mono" fill="#78716c">2048</text>
+</g>
+
+<!-- notes and the closing line -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.5s" begin="8.6s;replay_ch9_gated_mlp.click+8.6s" fill="freeze"/>
+  <text x="360" y="354" text-anchor="middle" font-size="9" class="mono" fill="#78716c">6 of 16,384 middle numbers shown, values chosen for the example</text>
+  <text x="360" y="378" text-anchor="middle" font-size="11" fill="#78716c">three linear layers: up decides what flows, the gate decides how much</text>
+</g>
+<line x1="168" y1="383" x2="552" y2="383" stroke="#6ee7b7" stroke-width="2" stroke-linecap="square" stroke-dasharray="384" stroke-dashoffset="384"><set attributeName="stroke-dashoffset" to="384" begin="replay_ch9_gated_mlp.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="384" to="0" dur="0.6s" begin="9.0s;replay_ch9_gated_mlp.click+9.0s" fill="freeze"/></line>
+
+<g id="replay_ch9_gated_mlp" style="cursor:pointer">
+  <title>replay</title>
+  <rect x="682" y="12" width="24" height="24" rx="2" fill="#f97316"/>
+  <path d="M 698.5 21 A 5 5 0 1 0 699 26.5" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linecap="square"/>
+  <path d="M 696 18 L 699 21 L 695.5 23" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linejoin="miter"/>
+</g>
+</svg>

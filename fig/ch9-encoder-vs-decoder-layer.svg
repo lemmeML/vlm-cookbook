@@ -1,0 +1,185 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400">
+<!--
+  Font block pending: paste the licence comment and the three @font-face rules
+  from ch9-gated-mlp.svg (the earlier version) at the top of the style element below.
+  Until then the figure renders in the reader's system fonts.
+-->
+<style>
+text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-weight: 400; }
+.mono, .title { font-family: 'Geist Mono', Inter, ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-ligatures: none; }
+.title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.sub { font-size: 12px; }
+.strong { font-weight: 500; }
+</style>
+<title>Same skeleton, new parts: a token runs through the encoder layer, the same skeleton is copied for the decoder, and its two norms become RMSNorm, its MLP becomes gated and its attention becomes a stand-in built later</title>
+<defs>
+  <pattern id="hatch_ch9_encoder_vs_decoder_layer" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+    <line x1="0" y1="0" x2="0" y2="6" stroke="#78716c" stroke-width="1" opacity="0.35"/>
+  </pattern>
+</defs>
+
+<!-- title -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.8s" begin="0s;replay_ch9_encoder_vs_decoder_layer.click+0s" fill="freeze"/>
+  <text x="360" y="30" class="title" text-anchor="middle" fill="#78716c">Same skeleton, new parts</text>
+  <text x="360" y="50" class="sub" text-anchor="middle" fill="#78716c">the encoder layer on the left, the decoder layer built from it on the right</text>
+</g>
+
+<!-- ENCODER: main road, drawn segment by segment -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.3s;replay_ch9_encoder_vs_decoder_layer.click+0.3s" fill="freeze"/>
+  <text x="205" y="72" text-anchor="middle" font-size="11" class="strong" fill="#78716c">vision encoder layer</text>
+  <text x="58" y="92" text-anchor="end" font-size="10" class="mono" fill="#78716c">x</text>
+  <text x="58" y="268" text-anchor="end" font-size="10" class="mono" fill="#78716c">y</text>
+</g>
+<line x1="70" y1="84" x2="70" y2="133" stroke="#78716c" stroke-dasharray="49" stroke-dashoffset="49"><set attributeName="stroke-dashoffset" to="49" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="49" to="0" dur="0.25s" begin="0.3s;replay_ch9_encoder_vs_decoder_layer.click+0.3s" fill="freeze"/></line>
+<line x1="70" y1="155" x2="70" y2="225" stroke="#78716c" stroke-dasharray="70" stroke-dashoffset="70"><set attributeName="stroke-dashoffset" to="70" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="70" to="0" dur="0.25s" begin="0.55s;replay_ch9_encoder_vs_decoder_layer.click+0.55s" fill="freeze"/></line>
+<line x1="70" y1="247" x2="70" y2="268" stroke="#78716c" stroke-dasharray="21" stroke-dashoffset="21"><set attributeName="stroke-dashoffset" to="21" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="21" to="0" dur="0.15s" begin="0.8s;replay_ch9_encoder_vs_decoder_layer.click+0.8s" fill="freeze"/></line>
+
+<!-- ENCODER: side roads, boxes and plus nodes -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="0.6s;replay_ch9_encoder_vs_decoder_layer.click+0.6s" fill="freeze"/>
+  <path d="M 66 262 L 70 268 L 74 262" fill="none" stroke="#78716c"/>
+  <path d="M 70 104 L 98 104 M 226 104 L 234 104 M 330 104 L 340 104 L 340 144 L 81 144" fill="none" stroke="#78716c"/>
+  <path d="M 87 140 L 81 144 L 87 148" fill="none" stroke="#78716c"/>
+  <path d="M 70 196 L 98 196 M 226 196 L 234 196 M 330 196 L 340 196 L 340 236 L 81 236" fill="none" stroke="#78716c"/>
+  <path d="M 87 232 L 81 236 L 87 240" fill="none" stroke="#78716c"/>
+  <rect x="98" y="92" width="128" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <text x="162" y="107.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c">layer_norm1</text>
+  <rect x="234" y="92" width="96" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <text x="282" y="107.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c">self_attn</text>
+  <rect x="98" y="184" width="128" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <text x="162" y="199.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c">layer_norm2</text>
+  <rect x="234" y="184" width="96" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <text x="282" y="199.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c">mlp</text>
+  <circle cx="70" cy="144" r="11" fill="none" stroke="#78716c"/>
+  <text x="70" y="148.5" text-anchor="middle" font-size="14" class="mono" fill="#78716c">+</text>
+  <circle cx="70" cy="236" r="11" fill="none" stroke="#78716c"/>
+  <text x="70" y="240.5" text-anchor="middle" font-size="14" class="mono" fill="#78716c">+</text>
+</g>
+
+<!-- ENCODER: flashes as the copy passes through each box -->
+<rect x="98" y="92" width="128" height="24" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="1.35s;replay_ch9_encoder_vs_decoder_layer.click+1.35s" fill="freeze"/></rect>
+<rect x="234" y="92" width="96" height="24" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="1.68s;replay_ch9_encoder_vs_decoder_layer.click+1.68s" fill="freeze"/></rect>
+<rect x="98" y="184" width="128" height="24" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="3.37s;replay_ch9_encoder_vs_decoder_layer.click+3.37s" fill="freeze"/></rect>
+<rect x="234" y="184" width="96" height="24" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.5s" begin="3.7s;replay_ch9_encoder_vs_decoder_layer.click+3.7s" fill="freeze"/></rect>
+
+<!-- ENCODER: the plus nodes light up when the two roads meet -->
+<circle cx="70" cy="144" r="11" fill="#6ee7b7" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.6s" begin="2.75s;replay_ch9_encoder_vs_decoder_layer.click+2.75s" fill="freeze"/></circle>
+<circle cx="70" cy="236" r="11" fill="#6ee7b7" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.6s" begin="4.78s;replay_ch9_encoder_vs_decoder_layer.click+4.78s" fill="freeze"/></circle>
+
+<!-- ENCODER: the token on the main road waits at each plus for its correction -->
+<circle cx="0" cy="0" r="5" fill="#fcd34d" opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/>
+  <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.03;0.97;1" dur="4.5s" begin="1.0s;replay_ch9_encoder_vs_decoder_layer.click+1.0s" fill="freeze"/>
+  <animateMotion path="M 70 84 L 70 268" keyPoints="0;0.1087;0.3261;0.6087;0.8261;1" keyTimes="0;0.05;0.4;0.5;0.85;1" calcMode="linear" dur="4.5s" begin="1.0s;replay_ch9_encoder_vs_decoder_layer.click+1.0s" fill="freeze"/>
+</circle>
+<!-- ENCODER: a copy takes each side road -->
+<circle cx="0" cy="0" r="4" fill="#fcd34d" opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/>
+  <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.05;0.95;1" dur="1.575s" begin="1.225s;replay_ch9_encoder_vs_decoder_layer.click+1.225s" fill="freeze"/>
+  <animateMotion path="M 70 104 L 340 104 L 340 144 L 70 144" dur="1.575s" begin="1.225s;replay_ch9_encoder_vs_decoder_layer.click+1.225s" fill="freeze"/>
+</circle>
+<circle cx="0" cy="0" r="4" fill="#fcd34d" opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/>
+  <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.05;0.95;1" dur="1.575s" begin="3.25s;replay_ch9_encoder_vs_decoder_layer.click+3.25s" fill="freeze"/>
+  <animateMotion path="M 70 196 L 340 196 L 340 236 L 70 236" dur="1.575s" begin="3.25s;replay_ch9_encoder_vs_decoder_layer.click+3.25s" fill="freeze"/>
+</circle>
+
+<!-- DECODER: the same skeleton slides across -->
+<g opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/>
+  <animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="5.8s;replay_ch9_encoder_vs_decoder_layer.click+5.8s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate" from="-340 0" to="-340 0" begin="replay_ch9_encoder_vs_decoder_layer.click" dur="0.001s" fill="freeze"/>
+  <animateTransform attributeName="transform" type="translate" from="-340 0" to="0 0" dur="0.8s" begin="5.8s;replay_ch9_encoder_vs_decoder_layer.click+5.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <text x="545" y="72" text-anchor="middle" font-size="11" class="strong" fill="#78716c">language decoder layer</text>
+  <text x="398" y="92" text-anchor="end" font-size="10" class="mono" fill="#78716c">x</text>
+  <text x="398" y="268" text-anchor="end" font-size="10" class="mono" fill="#78716c">y</text>
+  <line x1="410" y1="84" x2="410" y2="133" stroke="#78716c"/>
+  <line x1="410" y1="155" x2="410" y2="225" stroke="#78716c"/>
+  <line x1="410" y1="247" x2="410" y2="268" stroke="#78716c"/>
+  <path d="M 406 262 L 410 268 L 414 262" fill="none" stroke="#78716c"/>
+  <path d="M 410 104 L 438 104 M 566 104 L 574 104 M 670 104 L 680 104 L 680 144 L 421 144" fill="none" stroke="#78716c"/>
+  <path d="M 427 140 L 421 144 L 427 148" fill="none" stroke="#78716c"/>
+  <path d="M 410 196 L 438 196 M 566 196 L 574 196 M 670 196 L 680 196 L 680 236 L 421 236" fill="none" stroke="#78716c"/>
+  <path d="M 427 232 L 421 236 L 427 240" fill="none" stroke="#78716c"/>
+  <rect x="438" y="92" width="128" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <rect x="574" y="92" width="96" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <rect x="438" y="184" width="128" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <rect x="574" y="184" width="96" height="24" rx="2" fill="none" stroke="#78716c"/>
+  <circle cx="410" cy="144" r="11" fill="none" stroke="#78716c"/>
+  <text x="410" y="148.5" text-anchor="middle" font-size="14" class="mono" fill="#78716c">+</text>
+  <circle cx="410" cy="236" r="11" fill="none" stroke="#78716c"/>
+  <text x="410" y="240.5" text-anchor="middle" font-size="14" class="mono" fill="#78716c">+</text>
+  <!-- the copied names, each fades when its part changes -->
+  <text x="502" y="107.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c" opacity="1"><set attributeName="opacity" to="1" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="6.7s;replay_ch9_encoder_vs_decoder_layer.click+6.7s" fill="freeze"/>layer_norm1</text>
+  <text x="502" y="199.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c" opacity="1"><set attributeName="opacity" to="1" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="7.7s;replay_ch9_encoder_vs_decoder_layer.click+7.7s" fill="freeze"/>layer_norm2</text>
+  <text x="622" y="199.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c" opacity="1"><set attributeName="opacity" to="1" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="8.2s;replay_ch9_encoder_vs_decoder_layer.click+8.2s" fill="freeze"/>mlp</text>
+</g>
+
+<!-- change 1: layer_norm1 becomes input_layernorm, an RMSNorm -->
+<rect x="438" y="92" width="0" height="24" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="width" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="width" from="0" to="128" dur="0.4s" begin="6.7s;replay_ch9_encoder_vs_decoder_layer.click+6.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="6.95s;replay_ch9_encoder_vs_decoder_layer.click+6.95s" fill="freeze"/>
+  <text x="502" y="107.5" text-anchor="middle" font-size="9.5" class="mono" fill="#0c0a09">input_layernorm</text>
+</g>
+<rect x="436" y="90" width="132" height="28" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.7s" begin="6.7s;replay_ch9_encoder_vs_decoder_layer.click+6.7s" fill="freeze"/></rect>
+
+<!-- change 2: self_attn becomes a stand-in, built later -->
+<rect x="574" y="92" width="96" height="24" rx="2" fill="url(#hatch_ch9_encoder_vs_decoder_layer)" stroke="#78716c" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="7.2s;replay_ch9_encoder_vs_decoder_layer.click+7.2s" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="6.55s;replay_ch9_encoder_vs_decoder_layer.click+6.55s" fill="freeze"/>
+  <text x="622" y="107.5" text-anchor="middle" font-size="10" class="mono" fill="#78716c">self_attn</text>
+</g>
+<rect x="572" y="90" width="100" height="28" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.7s" begin="7.2s;replay_ch9_encoder_vs_decoder_layer.click+7.2s" fill="freeze"/></rect>
+
+<!-- change 3: layer_norm2 becomes post_attention_layernorm, an RMSNorm -->
+<rect x="438" y="184" width="0" height="24" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="width" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="width" from="0" to="128" dur="0.4s" begin="7.7s;replay_ch9_encoder_vs_decoder_layer.click+7.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="7.95s;replay_ch9_encoder_vs_decoder_layer.click+7.95s" fill="freeze"/>
+  <text x="502" y="199" text-anchor="middle" font-size="8.5" class="mono" fill="#0c0a09">post_attention_layernorm</text>
+</g>
+<rect x="436" y="182" width="132" height="28" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.7s" begin="7.7s;replay_ch9_encoder_vs_decoder_layer.click+7.7s" fill="freeze"/></rect>
+
+<!-- change 4: mlp becomes the gated MLP -->
+<rect x="574" y="184" width="0" height="24" rx="2" fill="#6ee7b7" stroke="#6ee7b7"><set attributeName="width" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="width" from="0" to="96" dur="0.4s" begin="8.2s;replay_ch9_encoder_vs_decoder_layer.click+8.2s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/></rect>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="8.45s;replay_ch9_encoder_vs_decoder_layer.click+8.45s" fill="freeze"/>
+  <text x="622" y="199.5" text-anchor="middle" font-size="10" class="mono" fill="#0c0a09">mlp, gated</text>
+</g>
+<rect x="572" y="182" width="100" height="28" rx="2" fill="none" stroke="#f97316" stroke-width="2.5" opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" values="0;1;0" dur="0.7s" begin="8.2s;replay_ch9_encoder_vs_decoder_layer.click+8.2s" fill="freeze"/></rect>
+
+<!-- what each change means -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="6.95s;replay_ch9_encoder_vs_decoder_layer.click+6.95s" fill="freeze"/>
+  <text x="410" y="304" font-size="9" fill="#78716c">two norms become RMSNorm: one statistic, scale 1 + w</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="7.45s;replay_ch9_encoder_vs_decoder_layer.click+7.45s" fill="freeze"/>
+  <text x="410" y="318" font-size="9" fill="#78716c">self_attn gains rotary positions, the KV cache</text>
+  <text x="410" y="330" font-size="9" fill="#78716c">and shared key value heads, built later</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="8.45s;replay_ch9_encoder_vs_decoder_layer.click+8.45s" fill="freeze"/>
+  <text x="410" y="344" font-size="9" class="mono" fill="#78716c">mlp gains a gate: gate_proj, up_proj, down_proj</text>
+</g>
+
+<!-- how many times each repeats -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="8.9s;replay_ch9_encoder_vs_decoder_layer.click+8.9s" fill="freeze"/>
+  <text x="70" y="286" font-size="10" class="mono" fill="#78716c">× 27 in the real vision model</text>
+  <text x="410" y="286" font-size="10" class="mono" fill="#78716c">× 18, input first scaled by √2048</text>
+</g>
+
+<!-- legend -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="9.1s;replay_ch9_encoder_vs_decoder_layer.click+9.1s" fill="freeze"/>
+  <rect x="70" y="297" width="10" height="9" rx="2" fill="#6ee7b7"/>
+  <text x="86" y="305" font-size="9" fill="#78716c">built in this chapter</text>
+  <rect x="70" y="311" width="10" height="9" rx="2" fill="none" stroke="#78716c"/>
+  <text x="86" y="319" font-size="9" fill="#78716c">built earlier</text>
+  <rect x="70" y="325" width="10" height="9" rx="2" fill="url(#hatch_ch9_encoder_vs_decoder_layer)" stroke="#78716c"/>
+  <text x="86" y="333" font-size="9" fill="#78716c">stand-in, built later</text>
+</g>
+
+<!-- the closing line -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.6s" begin="9.5s;replay_ch9_encoder_vs_decoder_layer.click+9.5s" fill="freeze"/>
+  <text x="360" y="376" text-anchor="middle" font-size="11" fill="#78716c">norm, attention, add, norm, MLP, add: the order never changed, only the parts inside</text>
+</g>
+<line x1="132" y1="381" x2="588" y2="381" stroke="#6ee7b7" stroke-width="2" stroke-linecap="square" stroke-dasharray="456" stroke-dashoffset="456"><set attributeName="stroke-dashoffset" to="456" begin="replay_ch9_encoder_vs_decoder_layer.click" fill="freeze"/><animate attributeName="stroke-dashoffset" from="456" to="0" dur="0.7s" begin="9.9s;replay_ch9_encoder_vs_decoder_layer.click+9.9s" fill="freeze"/></line>
+
+<g id="replay_ch9_encoder_vs_decoder_layer" style="cursor:pointer">
+  <title>replay</title>
+  <rect x="682" y="12" width="24" height="24" rx="2" fill="#f97316"/>
+  <path d="M 698.5 21 A 5 5 0 1 0 699 26.5" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linecap="square"/>
+  <path d="M 696 18 L 699 21 L 695.5 23" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linejoin="miter"/>
+</g>
+</svg>

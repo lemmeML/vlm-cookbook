@@ -1,0 +1,215 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400">
+<!--
+  Font block pending: paste the licence comment and the three @font-face rules
+  from ch9-gated-mlp.svg at the top of the style element below.
+  Until then the figure renders in the reader's system fonts.
+-->
+<style>
+text { font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-weight: 400; }
+.mono, .title { font-family: 'Geist Mono', Inter, ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-ligatures: none; }
+.title { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.sub { font-size: 12px; }
+.strong { font-weight: 500; }
+</style>
+<title>Layer norm against RMSNorm on the token [1, 3, 1, 3]: layer norm slides the mean down to 0, RMSNorm only shrinks every value until the RMS is 1</title>
+
+<!-- title -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.8s" begin="0s;replay_ch9_rmsnorm_vs_layernorm.click+0s" fill="freeze"/>
+  <text x="360" y="30" class="title" text-anchor="middle" fill="#78716c">Layer norm against RMSNorm</text>
+  <text x="360" y="50" class="sub mono" text-anchor="middle" fill="#78716c">the same token [1, 3, 1, 3], steadied two ways</text>
+</g>
+
+<!-- panels, labels, baselines -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.5s" begin="0.3s;replay_ch9_rmsnorm_vs_layernorm.click+0.3s" fill="freeze"/>
+  <rect x="40" y="62" width="300" height="230" rx="2" fill="none" stroke="rgba(249,115,22,.45)"/>
+  <rect x="380" y="62" width="300" height="230" rx="2" fill="none" stroke="rgba(249,115,22,.45)"/>
+  <text x="190" y="82" text-anchor="middle" font-size="12" class="strong" fill="#78716c">layer norm</text>
+  <text x="530" y="82" text-anchor="middle" font-size="12" class="strong" fill="#78716c">RMSNorm</text>
+  <line x1="70" y1="210" x2="310" y2="210" stroke="#78716c"/>
+  <line x1="410" y1="210" x2="650" y2="210" stroke="#78716c"/>
+  <text x="62" y="213" text-anchor="end" font-size="9" class="mono" fill="#78716c">0</text>
+  <text x="402" y="213" text-anchor="end" font-size="9" class="mono" fill="#78716c">0</text>
+</g>
+
+<!-- layer norm bars: grow, then subtract the mean -->
+<rect x="100" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="fill" to="#6ee7b7" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="stroke" to="#6ee7b7" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="186" dur="0.5s" begin="0.6s;replay_ch9_rmsnorm_vs_layernorm.click+0.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.5s" begin="0.6s;replay_ch9_rmsnorm_vs_layernorm.click+0.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="186" to="210" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="fill" from="#6ee7b7" to="#fda4af" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" fill="freeze"/>
+  <animate attributeName="stroke" from="#6ee7b7" to="#fda4af" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" fill="freeze"/>
+</rect>
+<rect x="150" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="138" dur="0.5s" begin="0.7s;replay_ch9_rmsnorm_vs_layernorm.click+0.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="72" dur="0.5s" begin="0.7s;replay_ch9_rmsnorm_vs_layernorm.click+0.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="138" to="186" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="72" to="24" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+<rect x="200" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="fill" to="#6ee7b7" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="stroke" to="#6ee7b7" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="186" dur="0.5s" begin="0.8s;replay_ch9_rmsnorm_vs_layernorm.click+0.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.5s" begin="0.8s;replay_ch9_rmsnorm_vs_layernorm.click+0.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="186" to="210" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="fill" from="#6ee7b7" to="#fda4af" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" fill="freeze"/>
+  <animate attributeName="stroke" from="#6ee7b7" to="#fda4af" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" fill="freeze"/>
+</rect>
+<rect x="250" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="138" dur="0.5s" begin="0.9s;replay_ch9_rmsnorm_vs_layernorm.click+0.9s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="72" dur="0.5s" begin="0.9s;replay_ch9_rmsnorm_vs_layernorm.click+0.9s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="138" to="186" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="72" to="24" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+
+<!-- RMSNorm bars: grow, then shrink by the RMS -->
+<rect x="425" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="186" dur="0.5s" begin="0.6s;replay_ch9_rmsnorm_vs_layernorm.click+0.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.5s" begin="0.6s;replay_ch9_rmsnorm_vs_layernorm.click+0.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="186" to="199.27" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="24" to="10.73" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+<rect x="475" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="138" dur="0.5s" begin="0.7s;replay_ch9_rmsnorm_vs_layernorm.click+0.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="72" dur="0.5s" begin="0.7s;replay_ch9_rmsnorm_vs_layernorm.click+0.7s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="138" to="177.8" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="72" to="32.2" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+<rect x="525" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="186" dur="0.5s" begin="0.8s;replay_ch9_rmsnorm_vs_layernorm.click+0.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="24" dur="0.5s" begin="0.8s;replay_ch9_rmsnorm_vs_layernorm.click+0.8s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="186" to="199.27" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="24" to="10.73" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+<rect x="575" y="210" width="30" height="0" rx="2" fill="#6ee7b7" stroke="#6ee7b7">
+  <set attributeName="y" to="210" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="height" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="y" from="210" to="138" dur="0.5s" begin="0.9s;replay_ch9_rmsnorm_vs_layernorm.click+0.9s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="0" to="72" dur="0.5s" begin="0.9s;replay_ch9_rmsnorm_vs_layernorm.click+0.9s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y" from="138" to="177.8" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="height" from="72" to="32.2" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</rect>
+
+<!-- input values, both panels -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="1.4s;replay_ch9_rmsnorm_vs_layernorm.click+1.4s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="3.4s;replay_ch9_rmsnorm_vs_layernorm.click+3.4s" fill="freeze"/>
+  <text x="115" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+  <text x="165" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">3</text>
+  <text x="215" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+  <text x="265" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">3</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="1.4s;replay_ch9_rmsnorm_vs_layernorm.click+1.4s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.3s" begin="6.1s;replay_ch9_rmsnorm_vs_layernorm.click+6.1s" fill="freeze"/>
+  <text x="440" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+  <text x="490" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">3</text>
+  <text x="540" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+  <text x="590" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">3</text>
+</g>
+
+<!-- layer norm: the mean line appears, then slides to 0 -->
+<line x1="70" y1="162" x2="310" y2="162" stroke="#f97316" stroke-width="1.5" stroke-dasharray="5 3" opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="y1" to="162" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="y2" to="162" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="2.0s;replay_ch9_rmsnorm_vs_layernorm.click+2.0s" fill="freeze"/>
+  <animate attributeName="y1" from="162" to="210" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y2" from="162" to="210" dur="0.7s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.4s" begin="3.9s;replay_ch9_rmsnorm_vs_layernorm.click+3.9s" fill="freeze"/>
+</line>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="2.0s;replay_ch9_rmsnorm_vs_layernorm.click+2.0s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="2.9s;replay_ch9_rmsnorm_vs_layernorm.click+2.9s" fill="freeze"/>
+  <text x="72" y="157" font-size="9" class="mono" fill="#78716c">mean 2</text>
+</g>
+
+<!-- layer norm: new values -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="3.6s;replay_ch9_rmsnorm_vs_layernorm.click+3.6s" fill="freeze"/>
+  <text x="115" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">−1</text>
+  <text x="165" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+  <text x="215" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">−1</text>
+  <text x="265" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1</text>
+</g>
+
+<!-- layer norm captions, one after another -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="2.0s;replay_ch9_rmsnorm_vs_layernorm.click+2.0s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="2.8s;replay_ch9_rmsnorm_vs_layernorm.click+2.8s" fill="freeze"/>
+  <text x="190" y="278" text-anchor="middle" font-size="10" fill="#78716c">find the mean, 2</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="3.0s;replay_ch9_rmsnorm_vs_layernorm.click+3.0s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="4.1s;replay_ch9_rmsnorm_vs_layernorm.click+4.1s" fill="freeze"/>
+  <text x="190" y="278" text-anchor="middle" font-size="10" fill="#78716c">subtract it, every bar slides down by 2</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="4.3s;replay_ch9_rmsnorm_vs_layernorm.click+4.3s" fill="freeze"/>
+  <text x="190" y="278" text-anchor="middle" font-size="10" fill="#78716c">spread 1, so dividing changes nothing</text>
+</g>
+
+<!-- RMSNorm: the RMS line appears, then drops to 1 -->
+<line x1="410" y1="156.34" x2="650" y2="156.34" stroke="#f97316" stroke-width="1.5" stroke-dasharray="5 3" opacity="0">
+  <set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="y1" to="156.34" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <set attributeName="y2" to="156.34" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="4.8s;replay_ch9_rmsnorm_vs_layernorm.click+4.8s" fill="freeze"/>
+  <animate attributeName="y1" from="156.34" to="186" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+  <animate attributeName="y2" from="156.34" to="186" dur="0.7s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" calcMode="spline" keyTimes="0;1" keySplines="0.4 0 0.2 1" fill="freeze"/>
+</line>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="4.8s;replay_ch9_rmsnorm_vs_layernorm.click+4.8s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="5.5s;replay_ch9_rmsnorm_vs_layernorm.click+5.5s" fill="freeze"/>
+  <text x="412" y="151" font-size="9" class="mono" fill="#78716c">RMS ≈ 2.236</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="6.3s;replay_ch9_rmsnorm_vs_layernorm.click+6.3s" fill="freeze"/>
+  <text x="412" y="181" font-size="9" class="mono" fill="#78716c">RMS 1</text>
+</g>
+
+<!-- RMSNorm: new values -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="6.3s;replay_ch9_rmsnorm_vs_layernorm.click+6.3s" fill="freeze"/>
+  <text x="440" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">0.447</text>
+  <text x="490" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1.342</text>
+  <text x="540" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">0.447</text>
+  <text x="590" y="254" text-anchor="middle" font-size="10" class="mono" fill="#78716c">1.342</text>
+</g>
+
+<!-- RMSNorm captions, one after another -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="4.8s;replay_ch9_rmsnorm_vs_layernorm.click+4.8s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="5.4s;replay_ch9_rmsnorm_vs_layernorm.click+5.4s" fill="freeze"/>
+  <text x="530" y="278" text-anchor="middle" font-size="10" fill="#78716c">no mean: the RMS is √5 ≈ 2.236</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.3s" begin="5.6s;replay_ch9_rmsnorm_vs_layernorm.click+5.6s" fill="freeze"/>
+  <animate attributeName="opacity" from="1" to="0" dur="0.2s" begin="6.7s;replay_ch9_rmsnorm_vs_layernorm.click+6.7s" fill="freeze"/>
+  <text x="530" y="278" text-anchor="middle" font-size="10" fill="#78716c">divide by it, every bar shrinks, none moves</text>
+</g>
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.4s" begin="6.9s;replay_ch9_rmsnorm_vs_layernorm.click+6.9s" fill="freeze"/>
+  <text x="530" y="278" text-anchor="middle" font-size="10" class="mono" fill="#78716c">times 1 + w, w = 0: signs kept</text>
+</g>
+
+<!-- notes -->
+<g opacity="0"><set attributeName="opacity" to="0" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/><animate attributeName="opacity" from="0" to="1" dur="0.6s" begin="7.6s;replay_ch9_rmsnorm_vs_layernorm.click+7.6s" fill="freeze"/>
+  <text x="360" y="316" text-anchor="middle" font-size="10" class="mono" fill="#78716c">on [2, −2, 2, −2] the mean is already 0, and both give [1, −1, 1, −1]</text>
+  <text x="360" y="338" text-anchor="middle" font-size="10" class="mono" fill="#78716c">layer norm uses two statistics, RMSNorm uses one</text>
+  <text x="360" y="374" text-anchor="middle" font-size="12" fill="#78716c">RMSNorm skips the mean and only rescales</text>
+</g>
+<line x1="241" y1="380" x2="479" y2="380" stroke="#6ee7b7" stroke-width="2" stroke-linecap="square" stroke-dasharray="238" stroke-dashoffset="238">
+  <set attributeName="stroke-dashoffset" to="238" begin="replay_ch9_rmsnorm_vs_layernorm.click" fill="freeze"/>
+  <animate attributeName="stroke-dashoffset" from="238" to="0" dur="0.6s" begin="8.2s;replay_ch9_rmsnorm_vs_layernorm.click+8.2s" fill="freeze"/>
+</line>
+
+<g id="replay_ch9_rmsnorm_vs_layernorm" style="cursor:pointer">
+  <title>replay</title>
+  <rect x="682" y="12" width="24" height="24" rx="2" fill="#f97316"/>
+  <path d="M 698.5 21 A 5 5 0 1 0 699 26.5" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linecap="square"/>
+  <path d="M 696 18 L 699 21 L 695.5 23" fill="none" stroke="#0c0a09" stroke-width="1.6" stroke-linejoin="miter"/>
+</g>
+</svg>
