@@ -4918,3 +4918,580 @@ But one piece is still missing, nothing yet processes the 266 vectors, writes th
 That is what we will build in the next chapter. We will implement the decoder layer, including its normalization and MLP, and then stack 18 of them into the language model.
 
 ---
+
+# Chapter 9. Building the Language Model
+
+At the end of the last chapter the merge returned everything the language model needs, 266 input vectors, each containing 2048 numbers, a prefix mask that lets every prompt token read every other prompt token, and a position ID for every token. The cache is ready but nothing reads the sequence yet, the 266 vectors have not been processed, their keys and values have not been written into the cache, and the vector at the newline has not been turned into a prediction.
+
+In this chapter we build the **decoder layer** with its own norm and MLP, we then stack 18 decoder layers to create the language model. On top we add `lm_head`, a linear layer that converts each 2048-dimensional output vector into vocabulary scores, and finally connect everything together. Once the model is complete, we load PaliGemma's trained weights and ask our question for the first time.
+
+> **Main Idea: A decoder layer follows the same structure as an encoder layer, but uses different components. RMSNorm replaces layer norm, and a gated MLP replaces the plain MLP. 18 decoder layers, a final norm and the shared embedding table turn the 266 input vectors into scores for every token in the vocabulary.**
+
+Think back to the editors example, each editor reads the page, adds notes in the margin and passes the original page to the next editor. The language model has 18 new editors who work in the same way, but with two new tools. The first checks the size of the writing before they read it, and a pen that controls how much ink is used for writing the note. At the end, we read the notes at the new line to get our prediction.
+
+There is one limitation, though, the editors still cannot talk to each other, because attention for the decoder will be built in the upcoming chapter and until then, it is a stand-in.
+
+### What the language model does
+
+Here is the complete sequence of operations, with the shape of the data after each step. The first number in each shape is the batch size, the second is number of tokens, and the third is the length of each vector.
+
+```text
+  final_embedding        [1, 266, 2048]      from the merge
+  × √2048                [1, 266, 2048]      every vector scaled up
+  18 decoder layers      [1, 266, 2048]
+  final norm             [1, 266, 2048]
+  lm_head                [1, 266, 257216]    one score for every row of the vocabulary
+```
+
+The model receives and returns 266 vectors, which is the same input-output contract we had for the encoder. Only the last step changes the width, turning 2048 numbers into 257,216 scores.
+
+Each position gets its own row of scores but we only need one of these rows. **The row at the newline, which is the last position in our prompt, where the answer begins.**
+
+![the language model](fig/ch9-language-model-stack.svg)
+
+The figure follows the newline's vector as it moves down, the vector is scaled up and its length increases from about 5.91 to about 267.56, based on the average length calculation of vectors done in chapter 7. The vector then passes through the four steps of a decoder layer, attention adds only zeros for now, the 18 small squares show that these same four steps repeat in every layer. After the 18 layers, the final norm brings the vector's RMS back to 1, the `lm_head` turns it into a row of logits, `self_attn` is a stand-in, and the orange cell marks the last row of the logits, which is the next word.
+
+### Same skeleton, new parts
+
+A decoder layer works the same and in same order as an encoder layer. It first normalizes the input, passes it through attention, and adds the attention output to the original input. It then normalizes this updated representation, passes it through MLP, and adds the MLP output back to the representation.
+
+$$\mathbf{h} = \mathbf{x} + \text{Attention}\big(\text{RMSNorm}_1(\mathbf{x})\big)$$
+
+$$\mathbf{y} = \mathbf{h} + \text{MLP}\big(\text{RMSNorm}_2(\mathbf{h})\big)$$
+
+Here, $\mathbf{x}$ is one token's vector as it enters the layer, $\text{RMSNorm}_1$ and $\text{RMSNorm}_2$ are the two norms, $\mathbf{h}$ is the vector halfway through the layer, and $\mathbf{y}$ is the final output. These two equations are the same from chapter 4, the only difference is RMSNorm replaces layer norms $\text{LN}_1$ and $\text{LN}_2$ .
+
+The checkpoint uses the names `input_layernorm` and `post_attention_layernorm` for the two norms, and the two sublayers `self_attn` and `mlp`.
+
+![encoder layer against decoder layer](fig/ch9-encoder-vs-decoder-layer.svg)
+
+The left column shows the encoder layer, and the right column shows the decoder layer, in both layers, the input splits into two paths. One path carries the original input forward, while the other passes through a norm and a sublayer. The two paths meet at the addition step, where the sublayer's output is added to the original input through **residual connection**. The decoder layer keeps this same structure but uses different components.
+
+The two norms become RMSNorm, skips the mean, uses a single statistic, and scales by $1+w$. The attention layer also changes, with rotary positions, the KV cache, and query heads that share one key value head (built in the next chapter). Finally, the MLP gains a third linear layer called the gate, right after RMSNorm.
+
+The bottom of the figure shows how many times each layer repeats, Encoder repeats its layer `num_hidden_layers` times, in the real vision model it is 27. The decoder repeats its layer 18 times but first scales its input by $\sqrt{2048}$. The order stays the same: norm, attention, skip connection, norm, MLP, skip connection, only the components inside the layer change.
+
+### RMSNorm
+
+When we built the layer norm, we computed two statistics for every token, the mean and the spread, and used them to shift the numbers to mean 0 and scale them to spread 1.
+
+**RMSNorm**, short for root mean square normalization ([Zhang and Sennrich, 2019](https://arxiv.org/abs/1910.07467)), keeps only the second operation. Its authors argued that rescaling is what keeps training stable. They also found that shifting the values to a mean of 0 is not necessary. RMSNorm therefore skips the mean and instead, measures the size of a token using the **root mean square**, or RMS.
+
+To calculate RMS, we square every number, take the average of those squares, and then take the square root.
+
+$$\text{RMS}(\mathbf{x}) = \sqrt{\frac{1}{d}\sum_{i=1}^{d} x_i^2 + \epsilon}$$
+
+Here $x_i$ is the $i$-th number of the token, $d$ is how many numbers the token holds (2048 for Gemma) and $\epsilon$ is the small guard against division by zero, gemma reads it from `rms_norm_eps` with a value of $10^{-6}$.
+
+RMSNorm then divides every number by the RMS and multiplies it by a learned scale:
+$$y_i = \frac{x_i}{\text{RMS}(\mathbf{x})},(1 + w_i)$$
+
+$w_i$ is a learned weight for feature $i$, and $y_i$ is the output. RMSNorm does not shift the values, so it does not need a $\beta$ parameter. Each norm therefore stores just one vector of $d$ weights.
+
+Let's look at an example, take the vector $[2,−2,2,−2]$, squaring each number gives 4, the average is also 4, and its square root is 2. **So the RMS is 2**. Dividing every number by 2 gives: $[1, -1, 1, -1]$, the original token already has a mean of 0 and a spread of 2. Layer norm therefore gives exactly the same result.
+
+Now consider a vector: $[1,3,1,3]$, its mean is 2. Layer norm subtracts this mean and gives $[−1,1,−1,1]$, the spread of the new values is 1, so the result stays the same: $[-1, 1, -1, 1]$, and since the spread of that is 1, the result stays $[-1, 1, -1, 1]$. 
+
+RMSNorm works differently because it does not subtract the mean. We square the numbers and get 1, 9, 1 and 9. Their sum is 20, so the average is 5. The RMS is $\sqrt{5} \approx 2.236$.
+
+Dividing the original numbers by this value gives:
+
+$$[0.447, 1.342, 0.447, 1.342]$$
+
+We can check the result by squaring these numbers, the squares are approximately $0.2, 1.8, 0.2~\text{and}~1.8$. Their average is 1, so the output has an **RMS of 1**.
+
+Notice that every number also keeps its original sign, which is the main difference between the two methods. RMSNorm gives the same result as layer norm when a token's mean is 0, but when the mean is not 0, RMSNorm keeps that offset.
+
+![layer norm against RMSNorm](fig/ch9-rmsnorm-vs-layernorm.svg)
+
+The figure represents the vector $[1,3,1,3]$ as four bars, it compares how layer norm and RMSNorm process these values.
+
+On the layer norm side the dashed line marks the mean of 2, subtracting the mean moves this line to 0. Every bar moves down by the same amount, 3 become 1, and 1 become −1, making the spread 1, so dividing by it does not change anything.
+
+On the RMSNorm side, the dashed line marks the RMS, which is $2.236$. Dividing by this brings the it down to 1, every bar now shrinks by this factor. No bar crosses 0 with every value keeping its original sign.
+
+You might wonder why the scale is written as $1+w$. Layer norm uses a scale parameter called $\gamma$, which starts at 1. Gemma's RMSNorm stores only the difference from 1, its weight w starts at 0. Which means the initial scale is $1+0=1$. The norm leaves the sizes unchanged at the start of training, and later learns how to adjust the scale around 1. This matters when we load the weights, since the checkpoint stores $w$, not $1+w$. If our norm multiplied the values directly by the stored weights, every feature would get the wrong scale.
+
+It's worth noting that RMSNorm performs its calculations using 32 bit floats. The `forward` method first converts the token to 32 bit floats using `x.float()`, calculates the norm and then converts the result back to the original type using `type_as(x)`. Later, when we run the model on the CPU using a 16 bit format, calculating the average of 2048 squares requires more precision than 16 bits can provide. That is why RMSNorm always performs this part of the calculation in 32 bits.
+
+`torch.rsqrt` calculates the inverse of the square root of a number. i.e., $\frac{1}{\sqrt{x}}$.
+Multiplying by this value gives the same result as dividing by the RMS.
+
+The block below runs both examples, it also runs a standard layer norm on $[1,3,1,3]$. We disable its learned scale and shift using `elementwise_affine=False`, so you can compare the two methods directly. We also leave out `eps` here because the variance is 1, so adding the default epsilon has a negligible effect. In the actual model we always include it.
+
+```python
+import gc, json, re
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps=1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.zeros(dim))                 # starts at 0, so the scale starts at 1
+
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float())                               # computed in float32
+        output = output * (1.0 + self.weight.float())
+        return output.type_as(x)
+
+
+rms = RMSNorm(4)
+print(rms(torch.tensor([2., -2., 2., -2.])).detach())
+with torch.no_grad():
+    rms.weight.fill_(0.5)
+print(rms(torch.tensor([2., -2., 2., -2.])).detach())
+
+x = torch.tensor([1., 3., 1., 3.])                                   # mean 2, so layer norm and RMSNorm now differ
+print("layer norm:", nn.LayerNorm(4, elementwise_affine=False)(x))
+print("RMSNorm:   ", RMSNorm(4)(x).detach())
+```
+
+**Output:**
+
+```text
+tensor([ 1.0000, -1.0000, 1.0000, -1.0000])
+tensor([ 1.5000, -1.5000, 1.5000, -1.5000])
+layer norm: tensor([-1.0000, 1.0000, -1.0000, 1.0000])
+RMSNorm: tensor([0.4472, 1.3416, 0.4472, 1.3416])
+```
+
+RMSNorm gives us $[1,−1,1,−1]$, matching our calculation above. The weights are still 0 so the scale is 1 and the values remain unchanged after normalization. When we set every weight to $0.5$, the scale becomes $1.5$, and RMSNorm produces $[1.5,−1.5,1.5,−1.5]$. This shows how the learned weights control the scale of each feature.
+
+Layer norm produces $[−1,1,−1,1]$ for the input $[1,3,1,3]$, it subtracts the mean of 2 and divides by the spread of 1. This removes the original offset and gives us a result with a mean of 0.
+
+RMSNorm produces a different result, approximately $[0.4472,1.3416,0.4472,1.3416]$. It does not subtract the mean. Instead, it divides each value by 5, preserving the original offset. Gemma uses RMSNorm everywhere it needs normalization. Each decoder layer has two RMSNorm operations, and the language model has one additional RMSNorm at the end.
+
+With 18 decoder layers, that gives us $2×18+1=37$ norms where each norm has 2048 learned parameters, giving us a total of $37×2048=75{,}776$ parameters. This is a small number compared with the rest of the model, just like the $126,720$ norm parameters in the vision encoder (chapter 3). The important point is that RMSNorm uses one statistic instead of two. Gemma also stores its learned scale as $w$ and applies it as $1+w$.
+
+### The gated MLP
+
+The vision MLP we built in chapter 4, expands each token, applies an activation function, and then compresses it back to its original size. Many modern language models use a gated MLP instead of a plain MLP and Gemma is one of them, it has three linear layers instead of two; `gate_proj` and `up_proj`, both expanding the token dimensions from 2048 to 16384. The gate path then passes through **GELU**, using the same tanh approximation we used in chapter 4.
+
+> GELU (Gaussian Error Linear Unit) is an activation function that controls which values pass through a neural network. It keeps positive values mostly unchanged and pushes negative values towards zero.
+
+Next, we multiply the two paths number by number, and `down_proj` finally compresses the result back to 2048, and none of the linear layers have bias.
+
+$$\text{MLP}(\mathbf{x}) = W_{\text{down}}\Big(\text{GELU}\big(W_{\text{gate}},\mathbf{x}\big) \odot W_{\text{up}},\mathbf{x}\Big)$$
+
+$\mathbf{x}$ is one token's vector, $W_{\text{gate}}$ and $W_{\text{up}}$ are the weights of `gate_proj` and `up_proj`, each of shape $[16384, 2048]$, $W_{\text{down}}$ is the weight of `down_proj` with shape $[2048, 16384]$ and $\odot$ multiplies two vectors position by position. 
+
+Example: $[1, 2] \odot [3, 4] = [3, 8]$
+
+Think of these two paths as two separate streams of values, the up path carries the values, while the gate path controls how much of each value passes through. If a gate value is close to 0, very little passes through, and If it is large, more of the value passes through.
+
+![the gated MLP](fig/ch9-gated-mlp.svg)
+
+The figure shows 6 of the 16384 middle numbers in MLP, in the order it processes the data.
+The token gets split into two paths, each producing six numbers, shown as bars, GELU then processes the gate path, reducing the negative values towards 0 while leaving large positive values mostly unchanged.
+
+At each position, the gate value multiplies the up value, the resulting values then pass through `down_proj`, bringing the vector back to 2048.
+
+Let's follow the third column from figure, the gate path produces 1.50,
+GELU changes it to about 1.40. The up path produces 0.90. Multiplying these values gives $1.40⋅0.90=1.26$. Most of the up value therefore passes through the gate. The first column works differently, its gate path produces −2.00. GELU changes this to about −0.05, which is close to 0. The up path produces 1.20, but multiplying the two values gives only about −0.05. The gate is therefore almost closed. The last column shows a completely closed gate. Its gate value is 0.00, so the product is also 0.00, even though the up path produces 2.00.
+
+*Why do we need a gate?*
+
+In a plain MLP, each middle value comes from the GELU output of one linear layer. That single value determines both what passes through and how much passes through. A gated MLP separates these two jobs. The up path decides what information is available, while the gate decides how much of it passes through. The multiplication also allows the MLP to combine two learned features directly. A plain MLP cannot perform this same operation in one step. This family of MLPs comes from [GLU Variants Improve Transformer](https://arxiv.org/abs/2002.05202) (Shazeer, 2020), when GELU is used on the gate, the activation is called **GeGLU**. When a function called Swish is used instead, it is called SwiGLU.
+
+The paper found that gated versions trained better. Its author also admits that he cannot explain exactly why, and credits the result to "divine benevolence". So, just like the choice of GELU in the vision encoder, the gate is used because it works well in practice.
+
+The MLP's middle layer is also much wider than the one in the vision model. The vision MLP expands from 1152 to 4304 numbers, which is about 3.7 times wider. Gemma expands from 2048 to 16,384 numbers, exactly 8 times wider.
+
+This makes the gated MLP quite large:
+
+|Layer|Calculation|Parameters|
+|---|---|---|
+|`gate_proj`|$2048 \cdot 16{,}384$|33,554,432|
+|`up_proj`|$2048 \cdot 16{,}384$|33,554,432|
+|`down_proj`|$16{,}384 \cdot 2048$|33,554,432|
+|**Gated MLP**|$3 \cdot 33{,}554{,}432$|**100,663,296**|
+
+That is about 10 times the 9,921,872 parameters of one vision MLP, in a single layer.
+
+The block below builds the MLP from the real text config and runs our 266 token sequence through it. We build it on PyTorch's `meta` device, as we did in chapter 4, "Our names against the real checkpoint", so the layers get their shapes but no numbers, and this 100 million parameter module costs no memory at all. In the same spirit, `torch.empty` makes an input of the right shape with no values in it.
+
+```python
+class DecoderMLP(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.gate_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
+        self.up_proj = nn.Linear(config.hidden_size, config.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(config.intermediate_size, config.hidden_size, bias=False)
+
+    def forward(self, x):
+        gate = F.gelu(self.gate_proj(x), approximate="tanh")         # [B, T, 16384]
+        return self.down_proj(gate * self.up_proj(x))                # [B, T, 16384] -> [B, T, 2048]
+
+
+t_cfg = cfg.text_config
+with torch.device("meta"):
+    mlp = DecoderMLP(t_cfg)
+    out = mlp(torch.empty(1, 266, t_cfg.hidden_size))
+print(out.shape)
+print("gated MLP parameters:", sum(p.numel() for p in mlp.parameters()))
+```
+
+**Output:**
+
+```text
+torch.Size([1, 266, 2048])
+gated MLP parameters: 100663296
+```
+
+The shape is $[1, 266, 2048]$, so the sequence goes in with 2048 numbers per token and comes out with 2048, the same contract every sublayer follows, even though each token briefly holds 16,384 numbers on each path inside. The count is 100,663,296, the total from the table.
+
+Like the vision MLP, the gated MLP works on each token alone, because a linear layer only touches the last dimension and $\odot$ multiplies numbers at the same position of the same token. Inside the MLP, the newline never sees the dog.
+
+### A stand-in for attention
+
+The decoder layer needs attention, which we have not built yet, so we use the same trick as in chapter 4: a class with the right interface that returns zeros.
+
+`DecoderAttention` accepts the three things the merge prepared in chapter 8, namely the attention mask, the position IDs and the KV cache. It also keeps `layer_idx`, the number of its layer, which will tell the cache which slot belongs to it. For now, however, it ignores all of them and returns zeros, together with `None` in the place where the real module will return its attention weights.
+
+Because of the shortcut, a sublayer that returns zeros changes nothing, since $\mathbf{x} + \mathbf{0} = \mathbf{x}$. The stand-in also has no parameters, and when we replace it later, we will replace only this class.
+
+### The decoder layer
+
+`DecoderLayer` holds its four parts under their checkpoint names, `self_attn`, `mlp`, `input_layernorm` and `post_attention_layernorm`, and both norms read their epsilon from the config.
+
+If you read its `forward` next to the two equations from the start of the chapter, you will see that it is `VisionEncoderLayer` from chapter 4 with new names. `residual` keeps the input while a normalized copy goes through attention, and the input is then added back, after which the same happens around the MLP. The only other difference is that the layer passes the mask, the positions and the cache on to attention.
+
+### Eighteen layers and one scale up
+
+`LanguageModel` is the stack, and it holds three things under their checkpoint names: `embed_tokens`, the embedding table from chapter 7 with shape $[257216, 2048]$; `layers`, an `nn.ModuleList` of 18 decoder layers numbered 0 to 17; and `norm`, the final RMSNorm. A weight in the first layer's gate is therefore called `language_model.model.layers.0.mlp.gate_proj.weight`, and the table is `language_model.model.embed_tokens.weight`, the name we printed in chapter 7.
+
+Notice that `forward` never uses `embed_tokens`, because it receives `inputs_embeds`, the sequence the merge has already built. The lookup happens earlier, in the top level model, since the merge needs the text vectors before the language model runs, and the table lives here only because this is where the checkpoint stores it.
+
+The `forward` method begins by scaling the input, multiplying every vector by $\sqrt{2048} \approx 45.25$. This is the multiplication we prepared for in chapter 7, "Why the image features are divided by √d", where a text vector of length about 5.91 came out about 267.56 long, and an image vector divided by $\sqrt{2048}$ came back to the 47.29 the projector made. This line is where that actually happens. The factor is stored with `dtype=hidden_states.dtype`, the same type as the vectors, so in a 16 bit format $\sqrt{2048}$ is rounded to exactly 45.25. Hugging Face's Gemma does the same, so our numbers match theirs.
+
+Next, the method runs the layers, with each layer's output becoming the next layer's input 18 times, exactly as in the encoder stack. Finally, it applies the final norm. As we saw in chapter 4, "The residual stream and the final norm", the norms inside the layers only steady the copies entering the sublayers, while the stream itself keeps growing, so one final norm brings it back to a steady size before the head reads it.
+
+### The head and the whole model
+
+`CausalLM` puts the head on top of the stack. Its name follows Hugging Face, where a "causal LM" is a Transformer plus a final layer that produces next token scores at every position. It holds two parts: `model`, which is the `LanguageModel`, and `lm_head`, the linear layer from chapter 7, "Weight tying", that turns 2048 numbers into 257,216 scores with no bias.
+
+The class also has three methods. `get_input_embeddings` hands out the embedding table so that the top level model can look up the token IDs, and `tie_weights` makes `lm_head` use the same matrix as `embed_tokens` with the single line `self.lm_head.weight = self.model.embed_tokens.weight`, the same line we tested in chapter 7. Its `forward` runs the stack and then the head, and converts the logits to 32 bit floats with `.float()`, so that the softmax over 257,216 scores is computed precisely even when the model runs in 16 bits. It returns a dictionary with the logits, and also the cache whenever one is passed in, so that the loop that writes the answer can hand it back at the next step.
+
+For our prompt the logits have shape $[1, 266, 257216]$, which is
+
+$$266 \cdot 257{,}216 = 68{,}419{,}456$$
+
+numbers, or about 274 MB in 32 bit floats, even though we only read the last of the 266 rows.
+
+`VisionLanguageModel` joins everything together. Its three attributes are named after the three top level names we printed from the checkpoint in chapter 7, `vision_tower`, `multi_modal_projector` and `language_model`, and its `forward` follows the steps of chapters 5 to 8 in order. It first looks up the text, as the embedding table turns `input_ids` into `inputs_embeds` of shape $[B, T, 2048]$, where $B$ is the batch size and $T$ the number of tokens, and the 256 image seats get placeholder rows, just as in chapter 7. It then sends the image through the vision tower, which turns `pixel_values` into $[B, 256, 1152]$ after the pixels are converted to the same type as the embeddings, so that both sides use the same number format. The projector resizes these image vectors to $[B, 256, 2048]$, and the merge function from chapter 8 places them in their seats and returns the sequence, the mask and the position IDs; `_merge_input_ids_with_image_features` only wraps that function, so that the model can call it with its own config. Finally, the language model turns the sequence into logits.
+
+Before we load anything, let's count the parameters by hand. Each decoder layer holds one gated MLP and two norms, while the stand-in attention holds nothing.
+
+|Part|Calculation|Parameters|
+|---|---|---|
+|Gated MLP|from the table above|100,663,296|
+|Two norms|$2 \cdot 2048$|4,096|
+|**One decoder layer**|$100{,}663{,}296 + 4{,}096$|**100,667,392**|
+|18 layers|$18 \cdot 100{,}667{,}392$|1,812,013,056|
+|Embedding table, shared by `lm_head`|from chapter 7|526,778,368|
+|Final norm|$2048$|2,048|
+|**Language model**|$526{,}778{,}368 + 1{,}812{,}013{,}056 + 2{,}048$|**2,338,793,472**|
+|Vision tower|from chapter 5|412,442,352|
+|Projector|from chapter 7|2,361,344|
+|**Whole model**|$412{,}442{,}352 + 2{,}361{,}344 + 2{,}338{,}793{,}472$|**2,753,597,168**|
+
+`lm_head` adds nothing to the count, because its weight is the embedding table, and since `parameters()` returns a shared tensor only once, the code below counts it once too. We build the whole model on the `meta` device again, tie the weights and count.
+
+```python
+class DecoderAttention(nn.Module):
+    # stand-in until the next chapters: returns zeros, so tokens cannot see each other yet
+    def __init__(self, config, layer_idx=None):
+        super().__init__()
+        self.layer_idx = layer_idx
+
+    def forward(self, hidden_states, attention_mask=None, position_ids=None, kv_cache=None):
+        return torch.zeros_like(hidden_states), None
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, config, layer_idx):
+        super().__init__()
+        self.self_attn = DecoderAttention(config=config, layer_idx=layer_idx)
+        self.mlp = DecoderMLP(config)
+        self.input_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+        self.post_attention_layernorm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+    def forward(self, hidden_states, attention_mask=None, position_ids=None, kv_cache=None):
+        residual = hidden_states
+        hidden_states = self.input_layernorm(hidden_states)
+        hidden_states, _ = self.self_attn(hidden_states=hidden_states, attention_mask=attention_mask,
+                                          position_ids=position_ids, kv_cache=kv_cache)
+        hidden_states = residual + hidden_states
+
+        residual = hidden_states
+        hidden_states = self.post_attention_layernorm(hidden_states)
+        hidden_states = self.mlp(hidden_states)
+        hidden_states = residual + hidden_states
+        return hidden_states
+
+
+class LanguageModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, config.pad_token_id)
+        self.layers = nn.ModuleList(
+            [DecoderLayer(config, layer_idx) for layer_idx in range(config.num_hidden_layers)]
+        )
+        self.norm = RMSNorm(config.hidden_size, eps=config.rms_norm_eps)
+
+    def forward(self, attention_mask=None, position_ids=None, inputs_embeds=None, kv_cache=None):
+        hidden_states = inputs_embeds                                # [B, T, 2048]
+        normalizer = torch.tensor(self.config.hidden_size ** 0.5, dtype=hidden_states.dtype)
+        hidden_states = hidden_states * normalizer
+        for decoder_layer in self.layers:
+            hidden_states = decoder_layer(hidden_states, attention_mask=attention_mask,
+                                          position_ids=position_ids, kv_cache=kv_cache)
+        return self.norm(hidden_states)
+
+
+class CausalLM(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.model = LanguageModel(config)
+        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+    def get_input_embeddings(self):
+        return self.model.embed_tokens
+
+    def tie_weights(self):
+        self.lm_head.weight = self.model.embed_tokens.weight
+
+    def forward(self, attention_mask=None, position_ids=None, inputs_embeds=None, kv_cache=None):
+        hidden_states = self.model(attention_mask=attention_mask, position_ids=position_ids,
+                                   inputs_embeds=inputs_embeds, kv_cache=kv_cache)
+        logits = self.lm_head(hidden_states).float()                 # [B, T, 257216]
+        return_data = {"logits": logits}
+        if kv_cache is not None:
+            return_data["kv_cache"] = kv_cache
+        return return_data
+
+
+class VisionLanguageModel(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.vision_tower = VisionModel(config.vision_config)
+        self.multi_modal_projector = MultiModalProjector(config)
+        self.vocab_size = config.vocab_size
+        self.language_model = CausalLM(config.text_config)
+        self.pad_token_id = config.pad_token_id if config.pad_token_id is not None else -1
+
+    def tie_weights(self):
+        return self.language_model.tie_weights()
+
+    def _merge_input_ids_with_image_features(self, image_features, inputs_embeds, input_ids, attention_mask, kv_cache=None):
+        return merge_input_ids_with_image_features(image_features, inputs_embeds, input_ids,
+                                                   attention_mask, self.config, kv_cache)   # from chapter 8
+
+    def forward(self, input_ids, pixel_values, attention_mask, kv_cache=None):
+        inputs_embeds = self.language_model.get_input_embeddings()(input_ids)               # [B, T, 2048]
+        selected_image_feature = self.vision_tower(pixel_values.to(inputs_embeds.dtype))   # [B, 256, 1152]
+        image_features = self.multi_modal_projector(selected_image_feature)               # [B, 256, 2048]
+
+        inputs_embeds, attention_mask, position_ids = self._merge_input_ids_with_image_features(
+            image_features, inputs_embeds, input_ids, attention_mask, kv_cache)
+
+        return self.language_model(
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            kv_cache=kv_cache,
+        )
+
+
+with torch.device("meta"):
+    full = VisionLanguageModel(cfg)
+    full.tie_weights()
+count = lambda m: sum(p.numel() for p in m.parameters())             # a shared matrix is counted once
+lm = full.language_model.model
+print("one decoder layer (attention still a stand-in):", count(lm.layers[0]))
+print("language model:                                 ", count(full.language_model))
+print("whole model:                                    ", count(full))
+del full
+```
+
+**Output:**
+
+```text
+one decoder layer (attention still a stand-in): 100667392
+language model:                                 2338793472
+whole model:                                    2753597168
+```
+
+One decoder layer holds 100,667,392 parameters, the gated MLP plus two norms of 2048 each. The language model holds 2,338,793,472, of which the 18 layers and the final norm make up about 77% and the embedding table about 23%, and the whole model holds 2,753,597,168, the total from our table.
+
+In chapter 7 we said that the whole model has 2,923,466,480 parameters. The difference is
+
+$$2{,}923{,}466{,}480 - 2{,}753{,}597{,}168 = 169{,}869{,}312$$
+
+which is exactly the decoder's attention: four projections in every layer, holding 9,437,184 parameters per layer, across 18 layers. We will build those projections in the next chapter.
+
+Once they are in place, the MLP will hold about 91% of every decoder layer, since $100{,}663{,}296 / (100{,}663{,}296 + 9{,}437{,}184 + 4{,}096) \approx 0.914$. In the vision encoder the MLP held about two thirds, so the language model puts almost all of its weights into the part that works on each token alone.
+
+### Loading PaliGemma
+
+Before you run the next block, switch Colab to a **GPU runtime**, because from here on the full model is loaded straight onto the GPU. Here is why. In 32 bit floats every parameter takes 4 bytes, so the model needs
+
+$$2{,}753{,}597{,}168 \cdot 4 = 11{,}014{,}388{,}672~\text{bytes}$$
+
+or about 11.0 GB, which grows to about 11.7 GB once attention is added. Colab's standard T4 GPU has about 15 GB of memory, so the model fits.
+
+Without a GPU, the code falls back to the CPU in **bfloat16**, a 16 bit format that keeps the range of a 32 bit float but stores fewer digits. Unlike the 16 bit float from chapter 1, it does not overflow at 65,504, and at 2 bytes per number the model takes about 5.5 GB. It works, but it is much slower.
+
+The first lines of the block free the memory held by earlier chapters, namely the vision tower, the embedding table and the projector we loaded in chapter 7, together with the tensors we built from them. Those three loaded parts alone took about 3.8 GB. If you started from a fresh runtime, those names do not exist and the lines simply do nothing.
+
+`load_vlm` then builds the model and fills it with the checkpoint. It starts by reading `config.json` and building `VisionLanguageModel` on the `meta` device, so that every layer gets its shape but no memory, and we never hold a random copy of 2.75 billion numbers. It then collects every name in our model's `state_dict` into `wanted`, opens each shard of the checkpoint straight onto the GPU, keeps only the tensors we want and converts them to our type, much like the `pick` function from chapter 7, but now for every part at once.
+
+The tensors are loaded with `strict=False` and `assign=True`. Strict loading would raise an error, because some names will not match, as we will see in the output. `assign=True` is needed because of the `meta` device: a `meta` tensor has no storage to copy numbers into, so instead of copying, each checkpoint tensor becomes the parameter itself.
+
+The weights are tied only after loading. Loading replaced the embedding table with a new tensor, so if we had tied the weights earlier, `lm_head` would still point at the old, empty `meta` tensor, which is why we tie them again now. The function then rebuilds the buffers. In chapter 2 we created `position_ids` with `persistent=False`, so it is not in the checkpoint and is still empty on `meta`, and we therefore rebuild it on the device. The `inv_freq` line prepares a buffer that the rotary positions will use later, but since no module has it yet, that line does nothing for now. Finally, the function compares the names, with `missing` listing our names that the checkpoint did not have and `unused` listing checkpoint names we did not use, and it switches the model to evaluation mode with `.eval()`.
+
+`pattern` is the helper from chapter 4, which replaces every layer number with `N` so that each kind of tensor is printed once.
+
+Before we run the block, let's predict the names. Our model has exactly one name that the checkpoint does not store, `language_model.lm_head.weight`, because the head is tied to the embedding table and the checkpoint never saved it; the tie fills it in. In the other direction, the checkpoint in chapter 7 held 603 tensors, 164 of them in the language model: the table, 9 tensors in each of the 18 layers, and the final norm. Our layers have 5 tensors each instead of 9, the two norms and the three MLP layers, and the missing 4 are the attention projections `q_proj`, `k_proj`, `v_proj` and `o_proj`, so $18 \cdot 4 = 72$ checkpoint tensors should stay unused. Everything else loads, which is $437 + 2 + (1 + 18 \cdot 5 + 1) = 437 + 2 + 92 = 531$ tensors, and indeed $531 + 72 = 603$.
+
+```python
+from huggingface_hub import hf_hub_download, get_safetensors_metadata
+from safetensors import safe_open
+
+for name in ("vision_tower", "embed_tokens", "projector", "projected", "image_features", "inputs_embeds",
+             "final", "b_final", "b_feats", "emb", "model", "lm_head", "scores", "mlp_real"):
+    globals().pop(name, None)                                        # free memory held by earlier chapters
+gc.collect()
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+dtype = torch.float32 if device == "cuda" else torch.bfloat16
+print("device:", device, "| dtype:", dtype)
+
+
+def load_vlm(device, dtype):
+    with open(hf_hub_download(PALI, "config.json")) as f:
+        config = VLMConfig(**json.load(f))
+    with torch.device("meta"):
+        model = VisionLanguageModel(config)                          # shapes only, no memory yet
+
+    wanted = set(model.state_dict().keys())
+    meta = get_safetensors_metadata(PALI)
+    state = {}
+    for fname in sorted(set(meta.weight_map.values())):
+        with safe_open(hf_hub_download(PALI, fname), framework="pt",
+                       device="cuda:0" if device == "cuda" else "cpu") as f:
+            for k in f.keys():
+                if k in wanted:
+                    state[k] = f.get_tensor(k).to(dtype)
+
+    result = model.load_state_dict(state, strict=False, assign=True)  # the checkpoint tensors become the weights
+    model.tie_weights()
+
+    for m in model.modules():                                        # buffers are not in the checkpoint, rebuild them
+        if isinstance(m, VisionEmbeddings):
+            m.position_ids = torch.arange(m.num_positions, device=device).expand((1, -1))
+        if hasattr(m, "inv_freq"):
+            m.inv_freq = 1.0 / (m.base ** (torch.arange(0, m.dim, 2, dtype=torch.int64, device=device).float() / m.dim))
+
+    ckpt = set(meta.weight_map)
+    unused = sorted(ckpt - wanted)
+    return model.eval(), config, result.missing_keys, unused
+
+
+pattern = lambda keys: sorted({re.sub(r"layers\.\d+\.", "layers.N.", k) for k in keys})
+
+model, config, missing, unused = load_vlm(device, dtype)
+print("missing in the checkpoint:", pattern(missing))
+print("in the checkpoint, not used yet:", len(unused), pattern(unused))
+```
+
+**Output:**
+
+```text
+missing in the checkpoint: ['language_model.lm_head.weight']
+in the checkpoint, not used yet: 72 ['language_model.model.layers.N.self_attn.k_proj.weight', 'language_model.model.layers.N.self_attn.o_proj.weight', 'language_model.model.layers.N.self_attn.q_proj.weight', 'language_model.model.layers.N.self_attn.v_proj.weight']
+```
+
+Both predictions hold. The only missing name is `language_model.lm_head.weight`, the tied head, and the 72 unused tensors are the four attention projections, `k_proj`, `o_proj`, `q_proj` and `v_proj`, in each of the 18 layers. Every other name and shape matched, because otherwise `load_state_dict` would have raised an error.
+
+### The dog's first guess
+
+Now for the fun part. The model has trained weights in every part except attention, so we can run the whole pipeline on the dog.
+
+`next_word_guess` runs the model once on `inputs`, the dog photo and our question from the processor. Since it passes no cache, this is a single prefill pass, and the model returns only the logits. The function takes the last row, the 257,216 scores after the newline, and turns them into probabilities with softmax, the function from chapter 1. It then uses `topk` to pick the 5 most likely tokens, and prints each one with its probability.
+
+Before you look at the output, ask yourself what the model can know at the newline. The stand-in attention returns zeros, so no token reads any other token, and every other part, the scale up, the norms and the MLPs, works on each token alone. The vector at the newline is therefore computed from the newline's own embedding and nothing else. The 256 image vectors and the question pass through the same layers, but none of their numbers ever reach the newline.
+
+This means that the guess at the newline would be exactly the same for any photo and any question, because the model is guessing what usually follows a newline, with no context at all.
+
+![the first guess, before attention](fig/ch9-first-guess.svg)
+
+Every position rises through the 18 layers up its own road and through its own gated MLP. The pink arcs show where attention would let the image and the question reach the newline, and they vanish because the stand-in returns zeros, so only the newline's vector goes on to `lm_head`, carrying nothing from the dog or the question.
+
+```python
+def next_word_guess(model, k=5):
+    with torch.no_grad():
+        out = model(input_ids=inputs["input_ids"].to(device),
+                    pixel_values=inputs["pixel_values"].to(device),
+                    attention_mask=inputs["attention_mask"].to(device))
+    probs = out["logits"][0, -1].softmax(dim=-1)                     # [257216], the prediction after "\n"
+    top = probs.topk(k)
+    for p, i in zip(top.values.tolist(), top.indices.tolist()):
+        print(f"{tokenizer.convert_ids_to_tokens(i):>15s}  {p:.3f}")
+
+
+print("what color is the dog? first guess, without attention:")
+next_word_guess(model)
+```
+
+**Output:**
+
+```text
+what color is the dog? first guess, without attention:
+'\n'    0.862
+'▁H'    0.011
+'<eos>' 0.011
+'▁'     0.008
+'.'     0.007
+```
+
+The model's top guess is another newline, with a probability of 0.862, far ahead of `▁H` and `<eos>` at 0.011 each, `▁` at 0.008 and `.` at 0.007. This is exactly what we should expect from a model that sees only a newline: in ordinary text, a newline is very often followed by another newline, so with no other context, that is the safest bet. There is no `▁brown` anywhere in the list, and there could not be, because the dog never reached this position.
+
+The guess is wrong, but the run is not. The photo went through the vision tower, the projector and the merge, and the sequence went through all 18 layers, the final norm and the shared head, with 2,753,597,168 trained parameters in place. The probabilities also come out of the same softmax that the real answer will use. We will run this same cell again once attention is in place, and watch the guess change.
+
+### Where the new pieces sit
+
+```text
+  photo, "answer en what color is the dog?"
+
+  processor              pixel_values [1, 3, 224, 224], input_ids [1, 266], attention_mask [1, 266]
+  embed_tokens           [1, 266] -> [1, 266, 2048]
+  vision_tower           [1, 3, 224, 224] -> [1, 256, 1152]
+  multi_modal_projector  [1, 256, 1152] -> [1, 256, 2048]
+  merge                  final_embedding [1, 266, 2048], mask [1, 1, 266, 266], position_ids [1, 266]
+  language_model
+    × √2048              [1, 266, 2048]
+    layers 0 to 17       h = x + self_attn(input_layernorm(x))         self_attn still a stand-in
+                         y = h + mlp(post_attention_layernorm(h))      [1, 266, 2048]
+    norm                 [1, 266, 2048]
+    lm_head              [1, 266, 257216], shares its matrix with embed_tokens
+```
+
+![ch9 so far](fig/ch9-so-far.svg)
+
+**The photo goes through the vision tower and the projector, and the IDs go through `embed_tokens`. The merge returns the sequence, the mask and the position IDs. The new language model scales the sequence by $\sqrt{2048}$, runs it through 18 decoder layers and a final norm, and `lm_head`, which shares its matrix with `embed_tokens`, turns it into logits. The mask and the positions are passed into the layers, waiting for attention to read them.**
+
+Think back to the editors one last time. All 18 of them are at their desks with their new norms and their gated pens, and the notes they write now come from trained weights. Each editor, however, still reads one word at a time and never looks at the rest of the page, so the editor at the newline writes notes about the newline alone.
+
+Every part of the model now exists and holds trained weights, except one. Nothing yet reads the mask, nothing writes keys and values into the cache, and nothing lets the newline look at the dog. In the next chapter we will build the decoder's attention, the part that finally reads the 266 vectors together, fills the cache, and lets 8 query heads share a single key value head.
+
+---
+
